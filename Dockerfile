@@ -31,7 +31,6 @@ RUN apk add --no-cache curl
 
 COPY --from=builder /opt/app/dist ./dist
 COPY --from=builder /opt/app/node_modules ./node_modules
-COPY --from=builder /opt/app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /opt/app/package.json ./package.json
 COPY --from=builder /opt/app/prisma ./prisma
 COPY --from=frontend /opt/frontend/dist ./frontend
