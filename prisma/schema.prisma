@@ -1,0 +1,79 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Employee {
+  id        String    @id @default(uuid()) @db.Uuid
+  email     String    @unique
+  password  String
+  firstName String?   @map("first_name")
+  lastName  String?   @map("last_name")
+  stockId   Int?      @map("stock_id")
+  isActive  Boolean   @default(true) @map("is_active")
+  lastSeen  DateTime? @map("last_seen")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  roleAssignments EmployeeRoleAssignment[]
+
+  @@map("employee")
+}
+
+model EmployeeRole {
+  id        BigInt   @id @default(autoincrement())
+  name      String   @unique
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  assignments EmployeeRoleAssignment[]
+  permissions EmployeeRolePermission[]
+
+  @@map("employee_role")
+}
+
+model EmployeePermission {
+  id        BigInt   @id @default(autoincrement())
+  name      String   @unique
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  rolePermissions EmployeeRolePermission[]
+
+  @@map("employee_permission")
+}
+
+model ServerSettings {
+  id             Int      @id @default(1)
+  setupCompleted Boolean  @default(false) @map("setup_completed")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@map("server_settings")
+}
+
+model EmployeeRoleAssignment {
+  id             BigInt   @id @default(autoincrement())
+  employeeId     String   @map("employee_id") @db.Uuid
+  employeeRoleId BigInt   @map("employee_role_id")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  employee     Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employeeRole EmployeeRole @relation(fields: [employeeRoleId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, employeeRoleId])
+  @@map("employee_role_assignment")
+}
+
+model EmployeeRolePermission {
+  id                   BigInt   @id @default(autoincrement())
+  employeeRoleId       BigInt   @map("employee_role_id")
+  employeePermissionId BigInt   @map("employee_permission_id")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  employeeRole       EmployeeRole       @relation(fields: [employeeRoleId], references: [id], onDelete: Cascade)
+  employeePermission EmployeePermission @relation(fields: [employeePermissionId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeRoleId, employeePermissionId])
+  @@map("employee_role_permission")
+}
