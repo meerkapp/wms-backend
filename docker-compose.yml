@@ -61,7 +61,7 @@ services:
     command: >
       redis-server
       --save ""
-      --appendonly no
+      --appendonly yes
       --maxmemory-policy noeviction
       --loglevel warning
     volumes:
