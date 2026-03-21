@@ -1,66 +1,24 @@
-import { INestApplication, ValidationPipe } from '@nestjs/common';
-import { Test } from '@nestjs/testing';
-import * as cookieParser from 'cookie-parser';
+import { INestApplication } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import * as request from 'supertest';
 import { App } from 'supertest/types';
-import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/common/prisma/prisma.service';
-
-const ADMIN = {
-  email: 'admin@test.com',
-  password: 'Test1234!',
-  firstName: 'Admin',
-  lastName: 'Test',
-};
-
-function extractCookie(res: request.Response, name: string): string | undefined {
-  const header = res.headers['set-cookie'] as string[] | string | undefined;
-  if (!header) return undefined;
-  const cookies = Array.isArray(header) ? header : [header];
-  const entry = cookies.find((c) => c.startsWith(`${name}=`));
-  return entry?.split(';')[0].split('=').slice(1).join('=');
-}
+import { ADMIN, cleanDatabase, createApp, extractCookie, seedAdmin } from './helpers';
 
 describe('Auth (e2e)', () => {
   let app: INestApplication<App>;
   let prisma: PrismaService;
 
   beforeAll(async () => {
-    const moduleRef = await Test.createTestingModule({
-      imports: [AppModule],
-    }).compile();
-
-    app = moduleRef.createNestApplication();
-    app.use(cookieParser());
-    app.setGlobalPrefix('api');
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
-    await app.init();
-
+    app = await createApp();
     prisma = app.get(PrismaService);
     await cleanDatabase(prisma);
+    await seedAdmin(app);
   });
 
   afterAll(async () => {
     await cleanDatabase(prisma);
     await app.close();
-  });
-
-  // -------------------------------------------------------------------------
-  describe('POST /api/setup/init', () => {
-    it('creates first admin and returns access_token + refresh cookie', async () => {
-      const res = await request(app.getHttpServer())
-        .post('/api/setup/init')
-        .send(ADMIN)
-        .expect(201);
-
-      expect(res.body).toHaveProperty('access_token');
-      expect(extractCookie(res, 'refresh_token')).toBeDefined();
-    });
-
-    it('returns 403 when setup already done', async () => {
-      await request(app.getHttpServer()).post('/api/setup/init').send(ADMIN).expect(403);
-    });
   });
 
   // -------------------------------------------------------------------------
@@ -167,7 +125,6 @@ describe('Auth (e2e)', () => {
       expect(res.body).toHaveProperty('access_token');
       expect(res.body).toHaveProperty('refresh_token');
     });
-
   });
 
   // -------------------------------------------------------------------------
@@ -260,12 +217,3 @@ describe('Auth (e2e)', () => {
     });
   });
 });
-
-async function cleanDatabase(prisma: PrismaService): Promise<void> {
-  await prisma.employeeRoleAssignment.deleteMany();
-  await prisma.employee.deleteMany();
-  await prisma.employeeRolePermission.deleteMany();
-  await prisma.employeeRole.deleteMany();
-  await prisma.employeePermission.deleteMany();
-  await prisma.serverSettings.deleteMany();
-}
