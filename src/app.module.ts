@@ -8,6 +8,7 @@ import { RedisModule } from './common/redis/redis.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { PresenceModule } from './modules/presence/presence.module';
 import { SetupModule } from './modules/setup/setup.module';
+import { SyncModule } from './modules/sync/sync.module';
 
 @Module({
   imports: [
@@ -17,9 +18,10 @@ import { SetupModule } from './modules/setup/setup.module';
     AuthModule,
     PresenceModule,
     SetupModule,
+    SyncModule,
     ServeStaticModule.forRoot({
       rootPath: join(__dirname, '..', 'frontend'),
-      exclude: ['/api/(.*)'],
+      exclude: ['/api/{*path}'],
     }),
   ],
   controllers: [AppController],
