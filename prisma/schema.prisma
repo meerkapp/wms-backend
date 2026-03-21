@@ -77,3 +77,52 @@ model EmployeeRolePermission {
   @@unique([employeeRoleId, employeePermissionId])
   @@map("employee_role_permission")
 }
+
+model Country {
+  id        Int      @id @default(autoincrement())
+  code      String   @unique @db.Char(2)
+  name      String
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  cities City[]
+
+  @@map("country")
+}
+
+model City {
+  id        Int      @id @default(autoincrement())
+  name      String
+  countryId Int?     @map("country_id")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  country Country? @relation(fields: [countryId], references: [id])
+  stocks  Stock[]
+
+  @@map("city")
+}
+
+model Organization {
+  id        Int      @id @default(autoincrement())
+  name      String
+  website   String?
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  stocks Stock[]
+
+  @@map("organization")
+}
+
+model Stock {
+  id             Int      @id @default(autoincrement())
+  address        String
+  note           String?
+  code           String   @unique
+  organizationId Int?     @map("organization_id")
+  cityId         Int?     @map("city_id")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization Organization? @relation(fields: [organizationId], references: [id])
+  city         City?         @relation(fields: [cityId], references: [id])
+
+  @@map("stock")
+}
