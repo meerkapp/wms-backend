@@ -7,7 +7,11 @@ import { PrismaModule } from './common/prisma/prisma.module';
 import { RedisModule } from './common/redis/redis.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { PresenceModule } from './modules/presence/presence.module';
+import { CityModule } from './modules/city/city.module';
+import { CountryModule } from './modules/country/country.module';
+import { OrganizationModule } from './modules/organization/organization.module';
 import { SetupModule } from './modules/setup/setup.module';
+import { StockModule } from './modules/stock/stock.module';
 import { SyncModule } from './modules/sync/sync.module';
 
 @Module({
@@ -19,6 +23,10 @@ import { SyncModule } from './modules/sync/sync.module';
     PresenceModule,
     SetupModule,
     SyncModule,
+    CountryModule,
+    CityModule,
+    OrganizationModule,
+    StockModule,
     ServeStaticModule.forRoot({
       rootPath: join(__dirname, '..', 'frontend'),
       exclude: ['/api/{*path}'],
