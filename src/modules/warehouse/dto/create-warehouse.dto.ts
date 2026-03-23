@@ -1,7 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsInt, IsOptional, IsString } from 'class-validator';
 
-export class CreateStockDto {
+export class CreateWarehouseDto {
   @ApiProperty({ example: 'WH-001' })
   @IsString()
   declare code: string;

@@ -13,7 +13,7 @@ model Employee {
   password  String
   firstName String?   @map("first_name")
   lastName  String?   @map("last_name")
-  stockId   Int?      @map("stock_id")
+  warehouseId Int?    @map("warehouse_id")
   isActive  Boolean   @default(true) @map("is_active")
   lastSeen  DateTime? @map("last_seen")
   updatedAt DateTime  @updatedAt @map("updated_at")
@@ -95,8 +95,8 @@ model City {
   countryId Int      @map("country_id")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  country Country @relation(fields: [countryId], references: [id])
-  stocks  Stock[]
+  country    Country     @relation(fields: [countryId], references: [id])
+  warehouses Warehouse[]
 
   @@map("city")
 }
@@ -107,12 +107,12 @@ model Organization {
   website   String?
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  stocks Stock[]
+  warehouses Warehouse[]
 
   @@map("organization")
 }
 
-model Stock {
+model Warehouse {
   id             Int      @id @default(autoincrement())
   address        String
   note           String?
@@ -124,5 +124,5 @@ model Stock {
   organization Organization @relation(fields: [organizationId], references: [id])
   city         City         @relation(fields: [cityId], references: [id])
 
-  @@map("stock")
+  @@map("warehouse")
 }

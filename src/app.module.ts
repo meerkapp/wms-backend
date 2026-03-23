@@ -11,7 +11,7 @@ import { CityModule } from './modules/city/city.module';
 import { CountryModule } from './modules/country/country.module';
 import { OrganizationModule } from './modules/organization/organization.module';
 import { SetupModule } from './modules/setup/setup.module';
-import { StockModule } from './modules/stock/stock.module';
+import { WarehouseModule } from './modules/warehouse/warehouse.module';
 import { SyncModule } from './modules/sync/sync.module';
 
 @Module({
@@ -26,7 +26,7 @@ import { SyncModule } from './modules/sync/sync.module';
     CountryModule,
     CityModule,
     OrganizationModule,
-    StockModule,
+    WarehouseModule,
     ServeStaticModule.forRoot({
       rootPath: join(__dirname, '..', 'frontend'),
       exclude: ['/api/{*path}'],

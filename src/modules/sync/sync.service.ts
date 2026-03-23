@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 
-export type SyncTable = 'stock' | 'organization' | 'city' | 'country';
+export type SyncTable = 'warehouse' | 'organization' | 'city' | 'country';
 
 export interface SyncResult<T = unknown> {
   items: T[];

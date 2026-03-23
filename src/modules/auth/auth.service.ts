@@ -17,7 +17,7 @@ export interface EmployeeTokenData {
   email: string;
   firstName: string | null;
   lastName: string | null;
-  stockId: number | null;
+  warehouseId: number | null;
   isActive: boolean;
   lastSeen: Date | null;
 }
@@ -180,7 +180,7 @@ export class AuthService {
       email: employee.email,
       firstName: employee.firstName,
       lastName: employee.lastName,
-      stockId: employee.stockId,
+      warehouseId: employee.warehouseId,
       isActive: employee.isActive,
       permissions,
       lastSeen: employee.lastSeen?.toISOString() ?? null,

@@ -122,7 +122,7 @@ export class AuthController {
       email: user.email,
       firstName: user.firstName,
       lastName: user.lastName,
-      stockId: user.stockId,
+      warehouseId: user.warehouseId,
       permissions: user.permissions,
       lastSeen: user.lastSeen,
     };
