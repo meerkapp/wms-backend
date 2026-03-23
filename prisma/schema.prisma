@@ -92,10 +92,10 @@ model Country {
 model City {
   id        Int      @id @default(autoincrement())
   name      String
-  countryId Int?     @map("country_id")
+  countryId Int      @map("country_id")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  country Country? @relation(fields: [countryId], references: [id])
+  country Country @relation(fields: [countryId], references: [id])
   stocks  Stock[]
 
   @@map("city")
@@ -117,12 +117,12 @@ model Stock {
   address        String
   note           String?
   code           String   @unique
-  organizationId Int?     @map("organization_id")
-  cityId         Int?     @map("city_id")
+  organizationId Int      @map("organization_id")
+  cityId         Int      @map("city_id")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
-  organization Organization? @relation(fields: [organizationId], references: [id])
-  city         City?         @relation(fields: [cityId], references: [id])
+  organization Organization @relation(fields: [organizationId], references: [id])
+  city         City         @relation(fields: [cityId], references: [id])
 
   @@map("stock")
 }

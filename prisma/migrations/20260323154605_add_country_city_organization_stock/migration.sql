@@ -12,7 +12,7 @@ CREATE TABLE "country" (
 CREATE TABLE "city" (
     "id" SERIAL NOT NULL,
     "name" TEXT NOT NULL,
-    "country_id" INTEGER,
+    "country_id" INTEGER NOT NULL,
     "updated_at" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "city_pkey" PRIMARY KEY ("id")
@@ -34,8 +34,8 @@ CREATE TABLE "stock" (
     "address" TEXT NOT NULL,
     "note" TEXT,
     "code" TEXT NOT NULL,
-    "organization_id" INTEGER,
-    "city_id" INTEGER,
+    "organization_id" INTEGER NOT NULL,
+    "city_id" INTEGER NOT NULL,
     "updated_at" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "stock_pkey" PRIMARY KEY ("id")
@@ -48,10 +48,10 @@ CREATE UNIQUE INDEX "country_code_key" ON "country"("code");
 CREATE UNIQUE INDEX "stock_code_key" ON "stock"("code");
 
 -- AddForeignKey
-ALTER TABLE "city" ADD CONSTRAINT "city_country_id_fkey" FOREIGN KEY ("country_id") REFERENCES "country"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "city" ADD CONSTRAINT "city_country_id_fkey" FOREIGN KEY ("country_id") REFERENCES "country"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "stock" ADD CONSTRAINT "stock_organization_id_fkey" FOREIGN KEY ("organization_id") REFERENCES "organization"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "stock" ADD CONSTRAINT "stock_organization_id_fkey" FOREIGN KEY ("organization_id") REFERENCES "organization"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "stock" ADD CONSTRAINT "stock_city_id_fkey" FOREIGN KEY ("city_id") REFERENCES "city"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "stock" ADD CONSTRAINT "stock_city_id_fkey" FOREIGN KEY ("city_id") REFERENCES "city"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
