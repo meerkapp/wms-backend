@@ -15,8 +15,8 @@ const REFRESH_TTL_MS = REFRESH_TTL_SECONDS * 1000;
 export interface EmployeeTokenData {
   id: string;
   email: string;
-  firstName: string | null;
-  lastName: string | null;
+  firstName: string;
+  lastName: string;
   warehouseId: number | null;
   isActive: boolean;
   lastSeen: Date | null;
