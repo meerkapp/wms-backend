@@ -15,13 +15,11 @@ export class CreateStockDto {
   @IsString()
   declare note?: string;
 
-  @ApiPropertyOptional({ example: 1 })
-  @IsOptional()
+  @ApiProperty({ example: 1 })
   @IsInt()
-  declare organizationId?: number;
+  declare organizationId: number;
 
-  @ApiPropertyOptional({ example: 1 })
-  @IsOptional()
+  @ApiProperty({ example: 1 })
   @IsInt()
-  declare cityId?: number;
+  declare cityId: number;
 }
