@@ -1,0 +1,36 @@
+{
+  "name": "@meerkapp/wms-contracts",
+  "version": "0.1.0",
+  "description": "Shared Zod contracts for Meerk WMS",
+  "license": "AGPL-3.0-only",
+  "author": "meerkapp <github.com/meerkapp>",
+  "homepage": "https://meerk.app",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/meerkapp/wms-backend.git"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "prepublishOnly": "pnpm build"
+  },
+  "dependencies": {
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "tsup": "^8.0.0",
+    "typescript": "~5.9.3"
+  }
+}
