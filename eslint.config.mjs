@@ -7,11 +7,11 @@ import globals from 'globals';
 export default [
   eslint.configs.recommended,
   {
-    files: ['src/**/*.ts', 'test/**/*.ts', 'prisma.config.ts'],
+    files: ['src/**/*.ts', 'test/**/*.ts', 'prisma.config.ts', 'contracts/**/*.ts'],
     languageOptions: {
       parser: tsparser,
       parserOptions: {
-        project: './tsconfig.json',
+        project: ['./tsconfig.json', './contracts/tsconfig.json'],
       },
       globals: globals.node,
     },

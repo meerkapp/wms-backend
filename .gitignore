@@ -140,3 +140,4 @@ vite.config.ts.timestamp-*
 
 /generated/prisma
 pnpm-debug.log*
+contracts/src/generated/
