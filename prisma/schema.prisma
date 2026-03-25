@@ -23,6 +23,7 @@ model Employee {
   lastSeen  DateTime? @map("last_seen")
   updatedAt DateTime  @updatedAt @map("updated_at")
 
+  warehouse       Warehouse?               @relation(fields: [warehouseId], references: [id])
   roleAssignments EmployeeRoleAssignment[]
 
   @@map("employee")
@@ -128,6 +129,7 @@ model Warehouse {
 
   organization Organization @relation(fields: [organizationId], references: [id])
   city         City         @relation(fields: [cityId], references: [id])
+  employees    Employee[]
 
   @@map("warehouse")
 }
