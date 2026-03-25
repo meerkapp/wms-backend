@@ -34,6 +34,6 @@ export default [
   },
   prettierConfig,
   {
-    ignores: ['dist/**', 'node_modules/**'],
+    ignores: ['dist/**', 'node_modules/**', 'contracts/src/generated/**'],
   },
 ];
