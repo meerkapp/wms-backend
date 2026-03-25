@@ -1,4 +1,4 @@
-import { PartialType } from '@nestjs/swagger';
-import { CreateOrganizationDto } from './create-organization.dto';
+import { createZodDto } from 'nestjs-zod';
+import { UpdateOrganizationSchema } from '@meerkapp/wms-contracts';
 
-export class UpdateOrganizationDto extends PartialType(CreateOrganizationDto) {}
+export class UpdateOrganizationDto extends createZodDto(UpdateOrganizationSchema) {}

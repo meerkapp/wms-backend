@@ -1,13 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsString, Length } from 'class-validator';
+import { createZodDto } from 'nestjs-zod';
+import { CreateCountrySchema } from '@meerkapp/wms-contracts';
 
-export class CreateCountryDto {
-  @ApiProperty({ example: 'AU' })
-  @IsString()
-  @Length(2, 2)
-  declare code: string;
-
-  @ApiProperty({ example: 'Australia' })
-  @IsString()
-  declare name: string;
-}
+export class CreateCountryDto extends createZodDto(CreateCountrySchema) {}

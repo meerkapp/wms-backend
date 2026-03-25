@@ -1,12 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsInt, IsString } from 'class-validator';
+import { createZodDto } from 'nestjs-zod';
+import { CreateCitySchema } from '@meerkapp/wms-contracts';
 
-export class CreateCityDto {
-  @ApiProperty({ example: 'Sydney' })
-  @IsString()
-  declare name: string;
-
-  @ApiProperty({ example: 1 })
-  @IsInt()
-  declare countryId: number;
-}
+export class CreateCityDto extends createZodDto(CreateCitySchema) {}

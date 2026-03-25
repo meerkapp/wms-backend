@@ -1,13 +1,4 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, IsUrl } from 'class-validator';
+import { createZodDto } from 'nestjs-zod';
+import { CreateOrganizationSchema } from '@meerkapp/wms-contracts';
 
-export class CreateOrganizationDto {
-  @ApiProperty({ example: 'Acme Corp' })
-  @IsString()
-  declare name: string;
-
-  @ApiPropertyOptional({ example: 'https://acme.com' })
-  @IsOptional()
-  @IsUrl()
-  declare website?: string;
-}
+export class CreateOrganizationDto extends createZodDto(CreateOrganizationSchema) {}

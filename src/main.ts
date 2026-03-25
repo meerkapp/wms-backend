@@ -1,6 +1,6 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { ZodValidationPipe } from 'nestjs-zod';
 import { ConfigService } from '@nestjs/config';
 import { apiReference } from '@scalar/nestjs-api-reference';
 import * as cookieParser from 'cookie-parser';
@@ -12,7 +12,7 @@ async function bootstrap() {
 
   app.use(cookieParser());
   app.setGlobalPrefix('api');
-  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+  app.useGlobalPipes(new ZodValidationPipe());
   app.enableCors({
     origin: configService.get<string>('FRONT_END_DOMAIN'),
     credentials: true,
