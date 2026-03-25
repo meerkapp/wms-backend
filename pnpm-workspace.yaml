@@ -2,6 +2,7 @@ packages:
   - contracts
 
 ignoredBuiltDependencies:
+  - esbuild
   - prisma-zod-generator
 onlyBuiltDependencies:
   - '@nestjs/core'
