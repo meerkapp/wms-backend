@@ -1,4 +1,4 @@
-import { Body, Controller, Param, ParseIntPipe, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -19,6 +19,12 @@ export class OrganizationController {
   @Post()
   create(@Body() dto: CreateOrganizationDto) {
     return this.organizationService.create(dto);
+  }
+
+  @ApiOperation({ summary: 'Get organization stats' })
+  @Get(':id/stats')
+  stats(@Param('id', ParseIntPipe) id: number) {
+    return this.organizationService.stats(id);
   }
 
   @ApiOperation({ summary: 'Update an organization' })

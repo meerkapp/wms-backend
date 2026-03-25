@@ -17,6 +17,14 @@ export class OrganizationService {
     return organization;
   }
 
+  async stats(id: number) {
+    const [warehouseCount, employeeCount] = await Promise.all([
+      this.prisma.warehouse.count({ where: { organizationId: id } }),
+      this.prisma.employee.count({ where: { warehouse: { organizationId: id } } }),
+    ]);
+    return { warehouseCount, employeeCount };
+  }
+
   async update(id: number, dto: UpdateOrganizationDto) {
     const organization = await this.prisma.organization
       .update({ where: { id }, data: dto })
