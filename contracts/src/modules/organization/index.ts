@@ -15,3 +15,8 @@ export const OrganizationSchema = OrganizationModelSchema
 export type CreateOrganizationDto = z.infer<typeof CreateOrganizationSchema>
 export type UpdateOrganizationDto = z.infer<typeof UpdateOrganizationSchema>
 export type Organization = z.infer<typeof OrganizationSchema>
+
+export interface OrganizationStats {
+  warehouseCount: number
+  employeeCount: number
+}
