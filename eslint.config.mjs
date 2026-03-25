@@ -12,6 +12,7 @@ export default [
       parser: tsparser,
       parserOptions: {
         project: ['./tsconfig.json', './contracts/tsconfig.json'],
+        tsconfigRootDir: import.meta.dirname,
       },
       globals: globals.node,
     },
