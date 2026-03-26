@@ -90,12 +90,12 @@ model Country {
   name      String
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  cities City[]
+  localities Locality[]
 
   @@map("country")
 }
 
-model City {
+model Locality {
   id        Int      @id @default(autoincrement())
   name      String
   countryId Int      @map("country_id")
@@ -104,7 +104,7 @@ model City {
   country    Country     @relation(fields: [countryId], references: [id])
   warehouses Warehouse[]
 
-  @@map("city")
+  @@map("locality")
 }
 
 model Organization {
@@ -124,11 +124,11 @@ model Warehouse {
   note           String?
   code           String   @unique
   organizationId Int      @map("organization_id")
-  cityId         Int      @map("city_id")
+  localityId     Int      @map("locality_id")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
   organization Organization @relation(fields: [organizationId], references: [id])
-  city         City         @relation(fields: [cityId], references: [id])
+  locality     Locality     @relation(fields: [localityId], references: [id])
   employees    Employee[]
 
   @@map("warehouse")
