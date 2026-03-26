@@ -6,13 +6,13 @@ export const CreateWarehouseSchema = z.object({
   note: z.string().optional().nullable(),
   code: z.string().min(1),
   organizationId: z.number().int().positive(),
-  cityId: z.number().int().positive(),
+  localityId: z.number().int().positive(),
 })
 
 export const UpdateWarehouseSchema = CreateWarehouseSchema.partial()
 
 export const WarehouseSchema = WarehouseModelSchema
-  .omit({ organization: true, city: true })
+  .omit({ organization: true, locality: true })
   .extend({ updatedAt: z.string() })
 
 export type CreateWarehouseDto = z.infer<typeof CreateWarehouseSchema>

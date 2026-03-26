@@ -7,7 +7,7 @@ export const CreateCountrySchema = z.object({
 })
 
 export const CountrySchema = CountryModelSchema
-  .omit({ cities: true })
+  .omit({ localities: true })
   .extend({ updatedAt: z.string() })
 
 export type CreateCountryDto = z.infer<typeof CreateCountrySchema>
