@@ -3,7 +3,6 @@ export const ALL_PERMISSIONS = [
   'organization:update',
   'warehouse:create',
   'warehouse:update',
-  'country:create',
   'locality:create',
 ] as const;
 

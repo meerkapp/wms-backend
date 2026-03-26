@@ -8,7 +8,6 @@ import { RedisModule } from './common/redis/redis.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { PresenceModule } from './modules/presence/presence.module';
 import { LocalityModule } from './modules/locality/locality.module';
-import { CountryModule } from './modules/country/country.module';
 import { OrganizationModule } from './modules/organization/organization.module';
 import { SetupModule } from './modules/setup/setup.module';
 import { WarehouseModule } from './modules/warehouse/warehouse.module';
@@ -23,7 +22,6 @@ import { SyncModule } from './modules/sync/sync.module';
     PresenceModule,
     SetupModule,
     SyncModule,
-    CountryModule,
     LocalityModule,
     OrganizationModule,
     WarehouseModule,
