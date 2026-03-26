@@ -24,19 +24,19 @@ describe('Warehouse (e2e)', () => {
     it('returns 401 without token', async () => {
       await request(app.getHttpServer())
         .post('/api/warehouse')
-        .send({ code: 'WH-001', address: '123 Warehouse St', organizationId: 1, cityId: 1 })
+        .send({ code: 'WH-001', address: '123 Warehouse St', organizationId: 1, localityId: 1 })
         .expect(401);
     });
 
     it('creates a warehouse', async () => {
       const country = await prisma.country.create({ data: { code: 'AU', name: 'Australia' } });
-      const city = await prisma.city.create({ data: { name: 'Sydney', countryId: country.id } });
+      const locality = await prisma.locality.create({ data: { name: 'Sydney', countryId: country.id } });
       const org = await prisma.organization.create({ data: { name: 'Acme Corp' } });
 
       const res = await request(app.getHttpServer())
         .post('/api/warehouse')
         .set('Authorization', `Bearer ${accessToken}`)
-        .send({ code: 'WH-001', address: '123 Warehouse St', organizationId: org.id, cityId: city.id })
+        .send({ code: 'WH-001', address: '123 Warehouse St', organizationId: org.id, localityId: locality.id })
         .expect(201);
 
       expect(res.body).toMatchObject({ code: 'WH-001', address: '123 Warehouse St' });
