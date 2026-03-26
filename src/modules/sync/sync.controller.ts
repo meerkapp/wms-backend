@@ -3,7 +3,7 @@ import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger'
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { SyncService, SyncTable } from './sync.service';
 
-const SYNC_TABLES: SyncTable[] = ['country', 'city', 'organization', 'warehouse'];
+const SYNC_TABLES: SyncTable[] = ['country', 'locality', 'organization', 'warehouse'];
 
 @ApiTags('sync')
 @ApiBearerAuth()

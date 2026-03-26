@@ -7,7 +7,7 @@ import { PrismaModule } from './common/prisma/prisma.module';
 import { RedisModule } from './common/redis/redis.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { PresenceModule } from './modules/presence/presence.module';
-import { CityModule } from './modules/city/city.module';
+import { LocalityModule } from './modules/locality/locality.module';
 import { CountryModule } from './modules/country/country.module';
 import { OrganizationModule } from './modules/organization/organization.module';
 import { SetupModule } from './modules/setup/setup.module';
@@ -24,7 +24,7 @@ import { SyncModule } from './modules/sync/sync.module';
     SetupModule,
     SyncModule,
     CountryModule,
-    CityModule,
+    LocalityModule,
     OrganizationModule,
     WarehouseModule,
     ServeStaticModule.forRoot({

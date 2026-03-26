@@ -3,20 +3,20 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
-import { CityService } from './city.service';
-import { CreateCityDto } from './dto/create-city.dto';
+import { LocalityService } from './locality.service';
+import { CreateLocalityDto } from './dto/create-locality.dto';
 
-@ApiTags('city')
+@ApiTags('locality')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, PermissionsGuard)
-@Controller('city')
-export class CityController {
-  constructor(private readonly cityService: CityService) {}
+@Controller('locality')
+export class LocalityController {
+  constructor(private readonly localityService: LocalityService) {}
 
-  @ApiOperation({ summary: 'Create a city' })
-  @RequirePermissions('city:create')
+  @ApiOperation({ summary: 'Create a locality' })
+  @RequirePermissions('locality:create')
   @Post()
-  create(@Body() dto: CreateCityDto) {
-    return this.cityService.create(dto);
+  create(@Body() dto: CreateLocalityDto) {
+    return this.localityService.create(dto);
   }
 }

@@ -4,7 +4,7 @@ export const ALL_PERMISSIONS = [
   'warehouse:create',
   'warehouse:update',
   'country:create',
-  'city:create',
+  'locality:create',
 ] as const;
 
 export type Permission = (typeof ALL_PERMISSIONS)[number];
