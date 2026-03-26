@@ -32,10 +32,10 @@ describe('Country (e2e)', () => {
       const res = await request(app.getHttpServer())
         .post('/api/country')
         .set('Authorization', `Bearer ${accessToken}`)
-        .send({ code: 'AU', name: 'Australia' })
+        .send({ code: 'XX', name: 'Test Country' })
         .expect(201);
 
-      expect(res.body).toMatchObject({ code: 'AU', name: 'Australia' });
+      expect(res.body).toMatchObject({ code: 'XX', name: 'Test Country' });
       expect(res.body).toHaveProperty('id');
     });
 

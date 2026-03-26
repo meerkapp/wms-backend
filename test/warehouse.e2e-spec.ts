@@ -29,7 +29,7 @@ describe('Warehouse (e2e)', () => {
     });
 
     it('creates a warehouse', async () => {
-      const country = await prisma.country.create({ data: { code: 'AU', name: 'Australia' } });
+      const country = await prisma.country.findFirstOrThrow({ where: { code: 'AU' } });
       const locality = await prisma.locality.create({ data: { name: 'Sydney', countryId: country.id } });
       const org = await prisma.organization.create({ data: { name: 'Acme Corp' } });
 

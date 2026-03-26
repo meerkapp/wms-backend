@@ -29,7 +29,7 @@ describe('Locality (e2e)', () => {
     });
 
     it('creates a locality', async () => {
-      const country = await prisma.country.create({ data: { code: 'AU', name: 'Australia' } });
+      const country = await prisma.country.findFirstOrThrow({ where: { code: 'AU' } });
 
       const res = await request(app.getHttpServer())
         .post('/api/locality')

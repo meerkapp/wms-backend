@@ -3,7 +3,7 @@ import { CountryModelSchema } from '../../generated/schemas/variants/pure/Countr
 
 export const CreateCountrySchema = z.object({
   code: z.string().length(2),
-  name: z.string().min(1),
+  name: z.string().min(1).optional().nullable(),
 })
 
 export const CountrySchema = CountryModelSchema
