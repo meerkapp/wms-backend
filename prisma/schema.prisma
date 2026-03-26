@@ -87,7 +87,7 @@ model EmployeeRolePermission {
 model Country {
   id        Int      @id @default(autoincrement())
   code      String   @unique @db.Char(2)
-  name      String
+  name      String?
   updatedAt DateTime @updatedAt @map("updated_at")
 
   localities Locality[]
