@@ -12,6 +12,7 @@ import { OrganizationModule } from './modules/organization/organization.module';
 import { SetupModule } from './modules/setup/setup.module';
 import { WarehouseModule } from './modules/warehouse/warehouse.module';
 import { SyncModule } from './modules/sync/sync.module';
+import { EmployeeModule } from './modules/employee/employee.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { SyncModule } from './modules/sync/sync.module';
     LocalityModule,
     OrganizationModule,
     WarehouseModule,
+    EmployeeModule,
     ServeStaticModule.forRoot({
       rootPath: join(__dirname, '..', 'frontend'),
       exclude: ['/api/{*path}'],

@@ -4,6 +4,16 @@ export const ALL_PERMISSIONS = [
   'warehouse:create',
   'warehouse:update',
   'locality:create',
+  'employee:read',
+  'employee:create',
+  'employee:update',
+  'employee:deactivate',
+  'employee:assign:role',
+  'employee:assign:warehouse',
+  'employee:read:own',
+  'employee:update:own:email',
+  'employee:update:own:password',
+  'employee:update:own:avatar',
 ] as const;
 
 export type Permission = (typeof ALL_PERMISSIONS)[number];
