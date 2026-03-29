@@ -338,10 +338,13 @@ export class SetupService {
         },
       });
 
-      await tx.country.createMany({
-        data: COUNTRIES,
-        skipDuplicates: true,
-      });
+      for (const country of COUNTRIES) {
+        await tx.country.upsert({
+          where: { code: country.code },
+          update: { currency: country.currency },
+          create: country,
+        });
+      }
 
       await tx.serverSettings.upsert({
         where: { id: 1 },
