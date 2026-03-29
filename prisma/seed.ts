@@ -281,7 +281,7 @@ async function main() {
   const adminRole = await prisma.employeeRole.upsert({
     where: { name: 'superadmin' },
     update: {},
-    create: { name: 'superadmin' },
+    create: { name: 'superadmin', color: '#f43f5e' },
   });
 
   const permissions = await prisma.employeePermission.findMany({

@@ -32,6 +32,7 @@ model Employee {
 model EmployeeRole {
   id        BigInt   @id @default(autoincrement())
   name      String   @unique
+  color     String?
   updatedAt DateTime @updatedAt @map("updated_at")
 
   assignments EmployeeRoleAssignment[]
