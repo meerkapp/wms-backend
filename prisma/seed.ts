@@ -261,7 +261,13 @@ const COUNTRIES: { code: string; currency: string }[] = [
   { code: 'ZW', currency: 'ZWL' },
 ];
 
+const COUNTRY_CODES = COUNTRIES.map((c) => c.code);
+
 async function main() {
+  await prisma.country.deleteMany({
+    where: { code: { notIn: COUNTRY_CODES } },
+  });
+
   for (const country of COUNTRIES) {
     await prisma.country.upsert({
       where: { code: country.code },
