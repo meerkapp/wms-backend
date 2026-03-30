@@ -8,6 +8,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
@@ -16,6 +17,7 @@ import { RequirePermissions } from '../../common/decorators/require-permissions.
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { JwtPayload } from '../auth/strategies/jwt.strategy';
+import { FindEmployeesDto } from './dto/find-employees.dto';
 import { UpdateEmployeeDto } from './dto/update-employee.dto';
 import { UpdateOwnEmailDto, UpdateOwnPasswordDto } from './dto/update-own-profile.dto';
 import { EmployeeService } from './employee.service';
@@ -30,8 +32,8 @@ export class EmployeeController {
   @ApiOperation({ summary: 'Get all employees' })
   @RequirePermissions('employee:read')
   @Get()
-  findAll() {
-    return this.employeeService.findAll();
+  findAll(@Query() query: FindEmployeesDto) {
+    return this.employeeService.findAll(query.page, query.limit);
   }
 
   @ApiOperation({ summary: 'Get own profile' })

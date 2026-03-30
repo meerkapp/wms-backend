@@ -42,11 +42,26 @@ const EMPLOYEE_SELECT = {
 export class EmployeeService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAll() {
-    return this.prisma.employee.findMany({
-      select: EMPLOYEE_SELECT,
-      orderBy: { lastName: 'asc' },
-    });
+  async findAll(page: number = 1, limit: number = 20) {
+    const skip = (page - 1) * limit;
+
+    const [items, total] = await Promise.all([
+      this.prisma.employee.findMany({
+        select: EMPLOYEE_SELECT,
+        orderBy: { lastName: 'asc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.employee.count(),
+    ]);
+
+    return {
+      items,
+      total,
+      page,
+      limit,
+      pages: Math.ceil(total / limit),
+    };
   }
 
   async findOne(id: string) {
