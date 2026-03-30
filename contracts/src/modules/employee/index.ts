@@ -21,6 +21,17 @@ export const EmployeeSchema = EmployeeModelSchema
 export type EmployeeRole = z.infer<typeof EmployeeRoleSchema>
 export type Employee = z.infer<typeof EmployeeSchema>
 
+export const CreateEmployeeSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(8),
+  firstName: z.string().min(1),
+  lastName: z.string().min(1),
+  warehouseId: z.number().int().optional(),
+  roleIds: z.array(z.number().int()).optional(),
+})
+
+export type CreateEmployeeDto = z.infer<typeof CreateEmployeeSchema>
+
 export const UpdateEmployeeSchema = z.object({
   firstName: z.string().optional(),
   lastName: z.string().optional(),
