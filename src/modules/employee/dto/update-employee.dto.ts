@@ -1,24 +1,4 @@
-import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsInt, IsOptional, IsString } from 'class-validator';
+import { createZodDto } from 'nestjs-zod';
+import { UpdateEmployeeSchema } from '@meerkapp/wms-contracts';
 
-export class UpdateEmployeeDto {
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  firstName?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  lastName?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsBoolean()
-  isActive?: boolean;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsInt()
-  warehouseId?: number | null;
-}
+export class UpdateEmployeeDto extends createZodDto(UpdateEmployeeSchema) {}
