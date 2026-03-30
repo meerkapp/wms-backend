@@ -30,7 +30,7 @@ model Employee {
 }
 
 model EmployeeRole {
-  id        BigInt   @id @default(autoincrement())
+  id        Int   @id @default(autoincrement())
   name      String   @unique
   color     String?
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -42,7 +42,7 @@ model EmployeeRole {
 }
 
 model EmployeePermission {
-  id        BigInt   @id @default(autoincrement())
+  id        Int   @id @default(autoincrement())
   name      String   @unique
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -60,9 +60,9 @@ model ServerSettings {
 }
 
 model EmployeeRoleAssignment {
-  id             BigInt   @id @default(autoincrement())
+  id             Int   @id @default(autoincrement())
   employeeId     String   @map("employee_id") @db.Uuid
-  employeeRoleId BigInt   @map("employee_role_id")
+  employeeRoleId Int   @map("employee_role_id")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
   employee     Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
@@ -73,9 +73,9 @@ model EmployeeRoleAssignment {
 }
 
 model EmployeeRolePermission {
-  id                   BigInt   @id @default(autoincrement())
-  employeeRoleId       BigInt   @map("employee_role_id")
-  employeePermissionId BigInt   @map("employee_permission_id")
+  id                   Int   @id @default(autoincrement())
+  employeeRoleId       Int   @map("employee_role_id")
+  employeePermissionId Int   @map("employee_permission_id")
   updatedAt            DateTime @updatedAt @map("updated_at")
 
   employeeRole       EmployeeRole       @relation(fields: [employeeRoleId], references: [id], onDelete: Cascade)
