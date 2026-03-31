@@ -1,6 +1,6 @@
 {
   "name": "@meerkapp/wms-contracts",
-  "version": "0.2.0-beta.10",
+  "version": "0.2.0-beta.11",
   "description": "Shared Zod contracts for Meerk WMS",
   "license": "MIT",
   "author": "meerkapp <github.com/meerkapp>",
@@ -10,14 +10,14 @@
     "url": "git+https://github.com/meerkapp/wms-backend.git"
   },
   "type": "module",
-  "main": "./dist/index.js",
-  "module": "./dist/index.mjs",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.mjs",
-      "require": "./dist/index.js"
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
     }
   },
   "files": [
