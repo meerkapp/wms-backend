@@ -8,7 +8,7 @@ import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { UpdateEmployeeDto } from './dto/update-employee.dto';
-import { UpdateOwnEmailDto, UpdateOwnPasswordDto } from './dto/update-own-profile.dto';
+import { UpdateOwnEmailDto, UpdateOwnPasswordDto, UpdateEmployeeEmailDto, UpdateEmployeePasswordDto } from './dto/update-own-profile.dto';
 
 const EMPLOYEE_SELECT = {
   id: true,
@@ -161,6 +161,39 @@ export class EmployeeService {
       });
 
     return this.findOne(employeeId);
+  }
+
+  async updateEmail(id: string, dto: UpdateEmployeeEmailDto) {
+    const existing = await this.prisma.employee.findUnique({
+      where: { email: dto.email },
+    });
+    if (existing && existing.id !== id) {
+      throw new ConflictException('Email already in use');
+    }
+
+    return this.prisma.employee
+      .update({
+        where: { id },
+        data: { email: dto.email },
+        select: EMPLOYEE_SELECT,
+      })
+      .catch(() => {
+        throw new NotFoundException(`Employee ${id} not found`);
+      });
+  }
+
+  async updatePassword(id: string, dto: UpdateEmployeePasswordDto) {
+    const hashed = await bcrypt.hash(dto.newPassword, 10);
+
+    return this.prisma.employee
+      .update({
+        where: { id },
+        data: { password: hashed },
+        select: EMPLOYEE_SELECT,
+      })
+      .catch(() => {
+        throw new NotFoundException(`Employee ${id} not found`);
+      });
   }
 
   async updateOwnEmail(id: string, dto: UpdateOwnEmailDto) {

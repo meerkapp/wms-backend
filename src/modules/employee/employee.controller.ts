@@ -20,7 +20,7 @@ import { JwtPayload } from '../auth/strategies/jwt.strategy';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { FindEmployeesDto } from './dto/find-employees.dto';
 import { UpdateEmployeeDto } from './dto/update-employee.dto';
-import { UpdateOwnEmailDto, UpdateOwnPasswordDto } from './dto/update-own-profile.dto';
+import { UpdateOwnEmailDto, UpdateOwnPasswordDto, UpdateEmployeeEmailDto, UpdateEmployeePasswordDto } from './dto/update-own-profile.dto';
 import { EmployeeService } from './employee.service';
 
 @ApiTags('employee')
@@ -38,14 +38,12 @@ export class EmployeeController {
   }
 
   @ApiOperation({ summary: 'Get all employees' })
-  @RequirePermissions('employee:read')
   @Get()
   findAll(@Query() query: FindEmployeesDto) {
     return this.employeeService.findAll(query.page, query.limit);
   }
 
   @ApiOperation({ summary: 'Get own profile' })
-  @RequirePermissions('employee:read:own')
   @Get('me')
   getMe(@CurrentUser() user: JwtPayload) {
     return this.employeeService.findOne(user.sub);
@@ -72,7 +70,6 @@ export class EmployeeController {
   }
 
   @ApiOperation({ summary: 'Get employee by id' })
-  @RequirePermissions('employee:read')
   @Get(':id')
   findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.employeeService.findOne(id);
@@ -93,6 +90,26 @@ export class EmployeeController {
   @Patch(':id/deactivate')
   deactivate(@Param('id', ParseUUIDPipe) id: string) {
     return this.employeeService.deactivate(id);
+  }
+
+  @ApiOperation({ summary: 'Update employee email' })
+  @RequirePermissions('employee:update:email')
+  @Patch(':id/email')
+  updateEmail(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateEmployeeEmailDto,
+  ) {
+    return this.employeeService.updateEmail(id, dto);
+  }
+
+  @ApiOperation({ summary: 'Update employee password' })
+  @RequirePermissions('employee:update:password')
+  @Patch(':id/password')
+  updatePassword(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateEmployeePasswordDto,
+  ) {
+    return this.employeeService.updatePassword(id, dto);
   }
 
   @ApiOperation({ summary: 'Assign role to employee' })

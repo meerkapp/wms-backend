@@ -24,21 +24,18 @@ export class RoleController {
   constructor(private readonly roleService: RoleService) {}
 
   @ApiOperation({ summary: 'Get all roles with permissions' })
-  @RequirePermissions('role:read')
   @Get()
   findAll() {
     return this.roleService.findAll();
   }
 
   @ApiOperation({ summary: 'Get all available permissions' })
-  @RequirePermissions('role:read')
   @Get('permissions')
   findAllPermissions() {
     return this.roleService.findAllPermissions();
   }
 
   @ApiOperation({ summary: 'Get role by id' })
-  @RequirePermissions('role:read')
   @Get(':id')
   findOne(@Param('id', ParseIntPipe) id: number) {
     return this.roleService.findOne(id);
