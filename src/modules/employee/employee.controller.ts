@@ -17,6 +17,7 @@ import { RequirePermissions } from '../../common/decorators/require-permissions.
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { JwtPayload } from '../auth/strategies/jwt.strategy';
+import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { FindEmployeesDto } from './dto/find-employees.dto';
 import { UpdateEmployeeDto } from './dto/update-employee.dto';
 import { UpdateOwnEmailDto, UpdateOwnPasswordDto } from './dto/update-own-profile.dto';
@@ -28,6 +29,13 @@ import { EmployeeService } from './employee.service';
 @Controller('employee')
 export class EmployeeController {
   constructor(private readonly employeeService: EmployeeService) {}
+
+  @ApiOperation({ summary: 'Create an employee' })
+  @RequirePermissions('employee:create')
+  @Post()
+  create(@Body() dto: CreateEmployeeDto) {
+    return this.employeeService.create(dto);
+  }
 
   @ApiOperation({ summary: 'Get all employees' })
   @RequirePermissions('employee:read')

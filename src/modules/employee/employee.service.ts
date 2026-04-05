@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { UpdateEmployeeDto } from './dto/update-employee.dto';
 import { UpdateOwnEmailDto, UpdateOwnPasswordDto } from './dto/update-own-profile.dto';
 
@@ -41,6 +42,36 @@ const EMPLOYEE_SELECT = {
 @Injectable()
 export class EmployeeService {
   constructor(private readonly prisma: PrismaService) {}
+
+  async create(dto: CreateEmployeeDto) {
+    const existing = await this.prisma.employee.findUnique({
+      where: { email: dto.email },
+    });
+    if (existing) throw new ConflictException('Email already in use');
+
+    const { password, roleIds, ...employeeData } = dto;
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    return this.prisma.$transaction(async (tx) => {
+      const employee = await tx.employee.create({
+        data: { ...employeeData, password: hashedPassword },
+      });
+
+      if (roleIds?.length) {
+        await tx.employeeRoleAssignment.createMany({
+          data: roleIds.map((roleId) => ({
+            employeeId: employee.id,
+            employeeRoleId: roleId,
+          })),
+        });
+      }
+
+      return tx.employee.findUniqueOrThrow({
+        where: { id: employee.id },
+        select: EMPLOYEE_SELECT,
+      });
+    });
+  }
 
   async findAll(page: number = 1, limit: number = 20) {
     const skip = (page - 1) * limit;

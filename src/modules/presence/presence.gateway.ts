@@ -60,6 +60,9 @@ export class PresenceGateway implements OnGatewayConnection, OnGatewayDisconnect
       await this.presenceService.setOnline(userId);
       this.notifyAll({ employeeId: userId, status: 'online' });
     }
+
+    // Send current online list to the newly connected client
+    socket.emit('presence:list', [...this.userSockets.keys()]);
   }
 
   async handleDisconnect(socket: Socket): Promise<void> {
