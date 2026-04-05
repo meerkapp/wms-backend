@@ -9,7 +9,7 @@ export const EmployeeRoleSchema = EmployeeRoleModelSchema
 export const EmployeeSchema = EmployeeModelSchema
   .omit({ password: true, warehouse: true, roleAssignments: true })
   .extend({
-    phone: z.string().min(7).max(20).nullable(),
+    phone: z.string().nullable(),
     lastSeen: z.string().nullable(),
     updatedAt: z.string(),
     roleAssignments: z.array(
@@ -35,32 +35,30 @@ export const CreateEmployeeSchema = z.object({
 export type CreateEmployeeDto = z.infer<typeof CreateEmployeeSchema>
 
 export const UpdateEmployeeSchema = z.object({
-  firstName: z.string().optional(),
-  lastName: z.string().optional(),
+  firstName: z.string().min(1).optional(),
+  lastName: z.string().min(1).optional(),
   phone: z.string().min(7).max(20).nullable().optional(),
-  isActive: z.boolean().optional(),
   warehouseId: z.number().int().nullable().optional(),
+  roleIds: z.array(z.number().int()).optional(),
+  email: z.string().email().optional(),
+  newPassword: z.string().min(8).optional(),
+  isActive: z.boolean().optional(),
 })
 
-export const UpdateOwnEmailSchema = z.object({
-  email: z.string().email(),
-})
-
-export const UpdateOwnPasswordSchema = z.object({
-  currentPassword: z.string(),
-  newPassword: z.string().min(8),
-})
-
-export const UpdateEmployeeEmailSchema = z.object({
-  email: z.string().email(),
-})
-
-export const UpdateEmployeePasswordSchema = z.object({
-  newPassword: z.string().min(8),
-})
+export const UpdateOwnProfileSchema = z.object({
+  firstName: z.string().min(1).optional(),
+  lastName: z.string().min(1).optional(),
+  phone: z.string().min(7).max(20).nullable().optional(),
+  email: z.string().email().optional(),
+  currentPassword: z.string().optional(),
+  newPassword: z.string().min(8).optional(),
+}).refine(
+  (data) => {
+    if (data.newPassword && !data.currentPassword) return false
+    return true
+  },
+  { message: 'currentPassword is required when changing password', path: ['currentPassword'] }
+)
 
 export type UpdateEmployeeDto = z.infer<typeof UpdateEmployeeSchema>
-export type UpdateOwnEmailDto = z.infer<typeof UpdateOwnEmailSchema>
-export type UpdateOwnPasswordDto = z.infer<typeof UpdateOwnPasswordSchema>
-export type UpdateEmployeeEmailDto = z.infer<typeof UpdateEmployeeEmailSchema>
-export type UpdateEmployeePasswordDto = z.infer<typeof UpdateEmployeePasswordSchema>
+export type UpdateOwnProfileDto = z.infer<typeof UpdateOwnProfileSchema>
