@@ -48,6 +48,16 @@ export const UpdateOwnPasswordSchema = z.object({
   newPassword: z.string().min(8),
 })
 
+export const UpdateEmployeeEmailSchema = z.object({
+  email: z.string().email(),
+})
+
+export const UpdateEmployeePasswordSchema = z.object({
+  newPassword: z.string().min(8),
+})
+
 export type UpdateEmployeeDto = z.infer<typeof UpdateEmployeeSchema>
 export type UpdateOwnEmailDto = z.infer<typeof UpdateOwnEmailSchema>
 export type UpdateOwnPasswordDto = z.infer<typeof UpdateOwnPasswordSchema>
+export type UpdateEmployeeEmailDto = z.infer<typeof UpdateEmployeeEmailSchema>
+export type UpdateEmployeePasswordDto = z.infer<typeof UpdateEmployeePasswordSchema>
