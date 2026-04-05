@@ -13,15 +13,16 @@ datasource db {
 }
 
 model Employee {
-  id        String    @id @default(uuid()) @db.Uuid
-  email     String    @unique
-  password  String
-  firstName String    @map("first_name")
-  lastName  String    @map("last_name")
-  warehouseId Int?    @map("warehouse_id")
-  isActive  Boolean   @default(true) @map("is_active")
-  lastSeen  DateTime? @map("last_seen")
-  updatedAt DateTime  @updatedAt @map("updated_at")
+  id          String    @id @default(uuid()) @db.Uuid
+  email       String    @unique
+  password    String
+  firstName   String    @map("first_name")
+  lastName    String    @map("last_name")
+  phone       String?
+  warehouseId Int?      @map("warehouse_id")
+  isActive    Boolean   @default(true) @map("is_active")
+  lastSeen    DateTime? @map("last_seen")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
 
   warehouse       Warehouse?               @relation(fields: [warehouseId], references: [id])
   roleAssignments EmployeeRoleAssignment[]
@@ -32,7 +33,7 @@ model Employee {
 model EmployeeRole {
   id        Int   @id @default(autoincrement())
   name      String   @unique
-  color     String?
+  color     String
   updatedAt DateTime @updatedAt @map("updated_at")
 
   assignments EmployeeRoleAssignment[]

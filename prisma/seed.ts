@@ -280,7 +280,7 @@ async function main() {
 
   const adminRole = await prisma.employeeRole.upsert({
     where: { name: 'superadmin' },
-    update: {},
+    update: { color: '#f43f5e' },
     create: { name: 'superadmin', color: '#f43f5e' },
   });
 

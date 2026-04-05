@@ -15,6 +15,7 @@ const EMPLOYEE_SELECT = {
   email: true,
   firstName: true,
   lastName: true,
+  phone: true,
   isActive: true,
   warehouseId: true,
   lastSeen: true,
