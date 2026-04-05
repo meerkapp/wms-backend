@@ -9,6 +9,7 @@ export const EmployeeRoleSchema = EmployeeRoleModelSchema
 export const EmployeeSchema = EmployeeModelSchema
   .omit({ password: true, warehouse: true, roleAssignments: true })
   .extend({
+    phone: z.string().min(7).max(20).nullable(),
     lastSeen: z.string().nullable(),
     updatedAt: z.string(),
     roleAssignments: z.array(
@@ -26,6 +27,7 @@ export const CreateEmployeeSchema = z.object({
   password: z.string().min(8),
   firstName: z.string().min(1),
   lastName: z.string().min(1),
+  phone: z.string().min(7).max(20).optional(),
   warehouseId: z.number().int().optional(),
   roleIds: z.array(z.number().int()).optional(),
 })
@@ -35,6 +37,7 @@ export type CreateEmployeeDto = z.infer<typeof CreateEmployeeSchema>
 export const UpdateEmployeeSchema = z.object({
   firstName: z.string().optional(),
   lastName: z.string().optional(),
+  phone: z.string().min(7).max(20).nullable().optional(),
   isActive: z.boolean().optional(),
   warehouseId: z.number().int().nullable().optional(),
 })

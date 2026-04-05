@@ -20,7 +20,7 @@ export type Role = z.infer<typeof RoleSchema>
 
 export const CreateRoleSchema = z.object({
   name: z.string().min(1),
-  color: z.string().optional(),
+  color: z.string(),
   permissionIds: z.array(z.number().int()).optional(),
 })
 
