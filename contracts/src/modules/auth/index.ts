@@ -6,17 +6,20 @@ export const ALL_PERMISSIONS = [
   'warehouse:create',
   'warehouse:update',
   'locality:create',
-  'employee:read',
+  // employee management
   'employee:create',
-  'employee:update',
-  'employee:deactivate',
-  'employee:assign:role',
-  'employee:assign:warehouse',
-  'employee:read:own',
+  'employee:update:info',
+  'employee:update:warehouse',
+  'employee:update:roles',
+  'employee:update:email',
+  'employee:update:password',
+  'employee:toggle:active',
+  // own profile
+  'employee:update:own:info',
   'employee:update:own:email',
   'employee:update:own:password',
   'employee:update:own:avatar',
-  'role:read',
+  // role management
   'role:create',
   'role:update',
 ] as const
