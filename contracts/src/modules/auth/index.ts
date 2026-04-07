@@ -14,6 +14,7 @@ export const ALL_PERMISSIONS = [
   'employee:update:email',
   'employee:update:password',
   'employee:toggle:active',
+  'employee:update:avatar',
   // own profile
   'employee:update:own:info',
   'employee:update:own:email',

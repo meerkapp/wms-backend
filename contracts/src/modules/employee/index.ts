@@ -9,6 +9,7 @@ export const EmployeeRoleSchema = EmployeeRoleModelSchema
 export const EmployeeSchema = EmployeeModelSchema
   .omit({ password: true, warehouse: true, roleAssignments: true })
   .extend({
+    avatarUrl: z.string().nullable(),
     phone: z.string().nullable(),
     lastSeen: z.string().nullable(),
     updatedAt: z.string(),
@@ -50,15 +51,13 @@ export const UpdateOwnProfileSchema = z.object({
   lastName: z.string().min(1).optional(),
   phone: z.string().min(7).max(20).nullable().optional(),
   email: z.string().email().optional(),
-  currentPassword: z.string().optional(),
-  newPassword: z.string().min(8).optional(),
-}).refine(
-  (data) => {
-    if (data.newPassword && !data.currentPassword) return false
-    return true
-  },
-  { message: 'currentPassword is required when changing password', path: ['currentPassword'] }
-)
+})
+
+export const UpdateOwnPasswordSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: z.string().min(8),
+})
 
 export type UpdateEmployeeDto = z.infer<typeof UpdateEmployeeSchema>
 export type UpdateOwnProfileDto = z.infer<typeof UpdateOwnProfileSchema>
+export type UpdateOwnPasswordDto = z.infer<typeof UpdateOwnPasswordSchema>
