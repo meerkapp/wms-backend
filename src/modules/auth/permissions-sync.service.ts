@@ -12,13 +12,12 @@ export class PermissionsSyncService implements OnModuleInit {
     await this.sync();
   }
 
-  private async sync(): Promise<void> {
-    const superadminRole = await this.prisma.employeeRole.findUnique({
+  async sync(): Promise<void> {
+    const superadminRole = await this.prisma.employeeRole.upsert({
       where: { name: 'superadmin' },
+      update: {},
+      create: { name: 'superadmin', color: '#f43f5e' },
     });
-
-    // skip if setup has not been completed yet
-    if (!superadminRole) return;
 
     const existing = await this.prisma.employeePermission.findMany();
     const existingNames = new Set(existing.map((p) => p.name));

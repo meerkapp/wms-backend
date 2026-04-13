@@ -5,6 +5,7 @@ import { ZodValidationPipe } from 'nestjs-zod';
 import * as request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/common/prisma/prisma.service';
+import { PermissionsSyncService } from '../src/modules/auth/permissions-sync.service';
 
 export const ADMIN = {
   email: 'admin@test.com',
@@ -13,10 +14,16 @@ export const ADMIN = {
   lastName: 'Balavr',
 };
 
-export async function createApp(): Promise<INestApplication> {
-  const moduleRef = await Test.createTestingModule({
-    imports: [AppModule],
-  }).compile();
+export async function createApp(
+  providerOverrides: Array<{ token: unknown; value: unknown }> = [],
+): Promise<INestApplication> {
+  const builder = Test.createTestingModule({ imports: [AppModule] });
+
+  for (const { token, value } of providerOverrides) {
+    builder.overrideProvider(token).useValue(value);
+  }
+
+  const moduleRef = await builder.compile();
 
   const app = moduleRef.createNestApplication();
   app.use(cookieParser());
@@ -27,6 +34,8 @@ export async function createApp(): Promise<INestApplication> {
 }
 
 export async function seedAdmin(app: INestApplication): Promise<{ access_token: string }> {
+  // Re-sync permissions/superadmin role in case cleanDatabase wiped them
+  await app.get(PermissionsSyncService).sync();
   const res = await request(app.getHttpServer()).post('/api/setup/init').send(ADMIN).expect(201);
   return res.body as { access_token: string };
 }
@@ -42,12 +51,8 @@ export function extractCookie(res: request.Response, name: string): string | und
 export async function cleanDatabase(prisma: PrismaService): Promise<void> {
   await prisma.employeeRoleAssignment.deleteMany();
   await prisma.employee.deleteMany();
-  await prisma.employeeRolePermission.deleteMany();
-  await prisma.employeeRole.deleteMany();
-  await prisma.employeePermission.deleteMany();
   await prisma.serverSettings.deleteMany();
   await prisma.warehouse.deleteMany();
   await prisma.locality.deleteMany();
   await prisma.organization.deleteMany();
-  await prisma.country.deleteMany();
 }
