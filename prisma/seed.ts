@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client';
-import { ALL_PERMISSIONS } from '../src/modules/auth/permissions';
+import { ALL_PERMISSIONS } from '@meerkapp/wms-contracts';
 
 const prisma = new PrismaClient();
 

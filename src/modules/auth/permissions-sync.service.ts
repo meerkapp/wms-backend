@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import { ALL_PERMISSIONS } from './permissions';
+import { ALL_PERMISSIONS } from '@meerkapp/wms-contracts';
 
 @Injectable()
 export class PermissionsSyncService implements OnModuleInit {
