@@ -1,17 +1,21 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
   Get,
   Param,
-  ParseIntPipe,
   ParseUUIDPipe,
   Patch,
   Post,
   Query,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { memoryStorage } from 'multer';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -20,8 +24,25 @@ import { JwtPayload } from '../auth/strategies/jwt.strategy';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { FindEmployeesDto } from './dto/find-employees.dto';
 import { UpdateEmployeeDto } from './dto/update-employee.dto';
-import { UpdateOwnEmailDto, UpdateOwnPasswordDto, UpdateEmployeeEmailDto, UpdateEmployeePasswordDto } from './dto/update-own-profile.dto';
+import { UpdateOwnPasswordDto, UpdateOwnProfileDto } from './dto/update-own-profile.dto';
 import { EmployeeService } from './employee.service';
+
+const AVATAR_FILE_FILTER = (
+  _req: unknown,
+  file: Express.Multer.File,
+  cb: (error: Error | null, acceptFile: boolean) => void,
+) => {
+  if (!file.mimetype.match(/^image\/(jpeg|png|webp)$/)) {
+    return cb(new BadRequestException('Only jpeg, png, webp images are allowed'), false);
+  }
+  cb(null, true);
+};
+
+const AVATAR_INTERCEPTOR = FileInterceptor('file', {
+  storage: memoryStorage(),
+  fileFilter: AVATAR_FILE_FILTER,
+  limits: { fileSize: 5 * 1024 * 1024 },
+});
 
 @ApiTags('employee')
 @ApiBearerAuth()
@@ -49,14 +70,38 @@ export class EmployeeController {
     return this.employeeService.findOne(user.sub);
   }
 
-  @ApiOperation({ summary: 'Update own email' })
-  @RequirePermissions('employee:update:own:email')
-  @Patch('me/email')
-  updateOwnEmail(
+  @ApiOperation({ summary: 'Upload own avatar' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } } } })
+  @RequirePermissions('employee:update:own:avatar')
+  @Post('me/avatar')
+  @UseInterceptors(AVATAR_INTERCEPTOR)
+  uploadOwnAvatar(
     @CurrentUser() user: JwtPayload,
-    @Body() dto: UpdateOwnEmailDto,
+    @UploadedFile() file: Express.Multer.File,
   ) {
-    return this.employeeService.updateOwnEmail(user.sub, dto);
+    if (!file) throw new BadRequestException('File is required');
+    return this.employeeService.uploadAvatar(user.sub, file);
+  }
+
+  @ApiOperation({ summary: 'Delete own avatar' })
+  @RequirePermissions('employee:update:own:avatar')
+  @Delete('me/avatar')
+  deleteOwnAvatar(@CurrentUser() user: JwtPayload) {
+    return this.employeeService.deleteAvatar(user.sub);
+  }
+
+  @ApiOperation({ summary: 'Update own profile' })
+  @RequirePermissions(
+    'employee:update:own:info',
+    'employee:update:own:email',
+  )
+  @Patch('me')
+  updateOwnProfile(
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: UpdateOwnProfileDto,
+  ) {
+    return this.employeeService.updateOwnProfile(user.sub, dto, user.permissions);
   }
 
   @ApiOperation({ summary: 'Update own password' })
@@ -75,60 +120,43 @@ export class EmployeeController {
     return this.employeeService.findOne(id);
   }
 
+  @ApiOperation({ summary: 'Upload avatar for employee' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } } } })
+  @RequirePermissions('employee:update:avatar')
+  @Post(':id/avatar')
+  @UseInterceptors(AVATAR_INTERCEPTOR)
+  uploadAvatar(
+    @Param('id', ParseUUIDPipe) id: string,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    if (!file) throw new BadRequestException('File is required');
+    return this.employeeService.uploadAvatar(id, file);
+  }
+
+  @ApiOperation({ summary: 'Delete avatar for employee' })
+  @RequirePermissions('employee:update:avatar')
+  @Delete(':id/avatar')
+  deleteAvatar(@Param('id', ParseUUIDPipe) id: string) {
+    return this.employeeService.deleteAvatar(id);
+  }
+
   @ApiOperation({ summary: 'Update employee' })
-  @RequirePermissions('employee:update')
+  @RequirePermissions(
+    'employee:update:info',
+    'employee:update:warehouse',
+    'employee:update:roles',
+    'employee:update:email',
+    'employee:update:password',
+    'employee:toggle:active',
+  )
   @Patch(':id')
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateEmployeeDto,
+    @CurrentUser() user: JwtPayload,
   ) {
-    return this.employeeService.update(id, dto);
+    return this.employeeService.update(id, dto, user.permissions);
   }
 
-  @ApiOperation({ summary: 'Deactivate employee' })
-  @RequirePermissions('employee:deactivate')
-  @Patch(':id/deactivate')
-  deactivate(@Param('id', ParseUUIDPipe) id: string) {
-    return this.employeeService.deactivate(id);
-  }
-
-  @ApiOperation({ summary: 'Update employee email' })
-  @RequirePermissions('employee:update:email')
-  @Patch(':id/email')
-  updateEmail(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: UpdateEmployeeEmailDto,
-  ) {
-    return this.employeeService.updateEmail(id, dto);
-  }
-
-  @ApiOperation({ summary: 'Update employee password' })
-  @RequirePermissions('employee:update:password')
-  @Patch(':id/password')
-  updatePassword(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: UpdateEmployeePasswordDto,
-  ) {
-    return this.employeeService.updatePassword(id, dto);
-  }
-
-  @ApiOperation({ summary: 'Assign role to employee' })
-  @RequirePermissions('employee:assign:role')
-  @Post(':id/roles/:roleId')
-  assignRole(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Param('roleId', ParseIntPipe) roleId: number,
-  ) {
-    return this.employeeService.assignRole(id, roleId);
-  }
-
-  @ApiOperation({ summary: 'Remove role from employee' })
-  @RequirePermissions('employee:assign:role')
-  @Delete(':id/roles/:roleId')
-  removeRole(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Param('roleId', ParseIntPipe) roleId: number,
-  ) {
-    return this.employeeService.removeRole(id, roleId);
-  }
 }
