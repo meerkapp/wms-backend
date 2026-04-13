@@ -19,6 +19,7 @@ model Employee {
   firstName   String    @map("first_name")
   lastName    String    @map("last_name")
   phone       String?
+  avatarUrl   String?   @map("avatar_url")
   warehouseId Int?      @map("warehouse_id")
   isActive    Boolean   @default(true) @map("is_active")
   lastSeen    DateTime? @map("last_seen")
