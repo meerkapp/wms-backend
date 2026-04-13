@@ -9,6 +9,7 @@ export interface JwtPayload {
   email: string;
   firstName: string;
   lastName: string;
+  avatarUrl: string | null;
   warehouseId: number | null;
   isActive: boolean;
   permissions: string[];
