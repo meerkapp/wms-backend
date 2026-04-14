@@ -21,7 +21,7 @@ RUN pnpm install --frozen-lockfile
 COPY . .
 RUN pnpm prisma generate
 RUN pnpm build
-RUN pnpm prune --prod
+RUN pnpm prune --prod --config.confirmModulesPurge=false
 
 # Stage 3: Production runner
 FROM node:22-alpine AS runner
