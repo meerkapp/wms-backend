@@ -12,8 +12,8 @@ importers:
         specifier: ^3.1024.0
         version: 3.1024.0
       '@meerkapp/wms-contracts':
-        specifier: 0.2.0-beta.16
-        version: 0.2.0-beta.16
+        specifier: 0.2.0-beta.17
+        version: 0.2.0-beta.17
       '@nestjs/common':
         specifier: ^11.0.1
         version: 11.1.16(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)
@@ -1053,8 +1053,8 @@ packages:
     resolution: {integrity: sha512-Z7C/xXCiGWsg0KuKsHTKJxbWhpI3Vs5GwLfOean7MGyVFGqdRgBbAjOCh6u4bbjPc/8MJ2pZmK/0DLdCbivLDA==}
     engines: {node: '>=8'}
 
-  '@meerkapp/wms-contracts@0.2.0-beta.16':
-    resolution: {integrity: sha512-LXHDUogktXt0Uq1vbncYN5AjtN9szWgWp9/DvtlLS6e820K/eoToiOd31o1UGhB39mvkbosnve+LJl8UFRIaNg==}
+  '@meerkapp/wms-contracts@0.2.0-beta.17':
+    resolution: {integrity: sha512-wRNvMDBoJr/Xx9j14AszTGaRgLLcv99y2EKeLcdsg6nZsBADGb+xuF/+fdxQc9GuZTqXimiWfHRtNApNH/uHeA==}
 
   '@microsoft/tsdoc@0.16.0':
     resolution: {integrity: sha512-xgAyonlVVS+q7Vc7qLW0UrJU7rSFcETRWsqdXZtjzRU8dF+6CkozTK4V4y1LwOX7j8r/vHphjDeMeGI4tNGeGA==}
@@ -5642,7 +5642,7 @@ snapshots:
 
   '@lukeed/csprng@1.1.0': {}
 
-  '@meerkapp/wms-contracts@0.2.0-beta.16':
+  '@meerkapp/wms-contracts@0.2.0-beta.17':
     dependencies:
       zod: 3.25.76
 
