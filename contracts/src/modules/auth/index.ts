@@ -23,6 +23,9 @@ export const ALL_PERMISSIONS = [
   // role management
   'role:create',
   'role:update',
+  // product type management
+  'product_type:create',
+  'product_type:update',
 ] as const
 
 export type Permission = (typeof ALL_PERMISSIONS)[number]
