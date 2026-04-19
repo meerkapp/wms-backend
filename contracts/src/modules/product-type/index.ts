@@ -51,7 +51,6 @@ const CheckboxCharacteristicSchema = z.object({
   key: z.string().min(1),
   label: z.string().min(1),
   type: z.literal('checkbox'),
-  required: z.boolean().default(false),
 })
 
 export const CharacteristicSchema = z.discriminatedUnion('type', [
@@ -92,7 +91,7 @@ function validateSkuTemplate(data: {
 
   const skuCompatibleKeys = new Set(
     data.characteristicsScheme
-      .filter((c) => c.required && SKU_COMPATIBLE_TYPES.has(c.type))
+      .filter((c) => SKU_COMPATIBLE_TYPES.has(c.type) && 'required' in c && c.required)
       .map((c) => c.key),
   )
 
