@@ -14,6 +14,7 @@ import { WarehouseModule } from './modules/warehouse/warehouse.module';
 import { SyncModule } from './modules/sync/sync.module';
 import { EmployeeModule } from './modules/employee/employee.module';
 import { RoleModule } from './modules/role/role.module';
+import { ProductTypeModule } from './modules/product-type/product-type.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { RoleModule } from './modules/role/role.module';
     WarehouseModule,
     EmployeeModule,
     RoleModule,
+    ProductTypeModule,
     ServeStaticModule.forRoot({
       rootPath: join(__dirname, '..', 'frontend'),
       exclude: ['/api/{*path}'],

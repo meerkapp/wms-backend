@@ -12,6 +12,31 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum WriteoffStrategy {
+  FIFO
+  LIFO
+  FEFO
+  MANUAL
+}
+
+enum SkuMode {
+  GLOBAL
+  CUSTOM
+}
+
+model ProductType {
+  id                      Int              @id @default(autoincrement())
+  name                    String
+  defaultWriteoffStrategy WriteoffStrategy @default(FIFO) @map("default_writeoff_strategy")
+  skuMode                 SkuMode          @default(GLOBAL) @map("sku_mode")
+  skuTemplate             String?          @map("sku_template")
+  skuCounter              Int              @default(0) @map("sku_counter")
+  characteristicsScheme   Json?            @map("characteristics_scheme")
+  updatedAt               DateTime         @updatedAt @map("updated_at")
+
+  @@map("product_type")
+}
+
 model Employee {
   id          String    @id @default(uuid()) @db.Uuid
   email       String    @unique
