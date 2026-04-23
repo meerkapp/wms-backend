@@ -1,6 +1,6 @@
 {
   "name": "@meerkapp/wms-contracts",
-  "version": "0.3.0-beta.4",
+  "version": "0.3.0-beta.5",
   "description": "Shared Zod contracts for Meerk WMS",
   "license": "MIT",
   "author": "meerkapp <github.com/meerkapp>",
