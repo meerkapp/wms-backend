@@ -1,6 +1,5 @@
 import { WebSocketGateway, WebSocketServer } from '@nestjs/websockets';
 import { Server } from 'socket.io';
-import { SyncTable } from './sync.service';
 
 export interface SyncChanges<T = unknown> {
   added: T[];
@@ -13,7 +12,7 @@ export class SyncGateway {
   @WebSocketServer()
   declare server: Server;
 
-  notifyChange<T>(table: SyncTable, changes: Partial<SyncChanges<T>>): void {
+  notifyChange<T>(table: string, changes: Partial<SyncChanges<T>>): void {
     this.server.emit(`sync:${table}`, {
       added: changes.added ?? [],
       modified: changes.modified ?? [],

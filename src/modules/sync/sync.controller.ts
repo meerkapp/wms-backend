@@ -1,9 +1,7 @@
 import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { SyncService, SyncTable } from './sync.service';
-
-const SYNC_TABLES: SyncTable[] = ['country', 'locality', 'organization', 'warehouse'];
+import { SyncService, SYNC_TABLE_MAP } from './sync.service';
 
 @ApiTags('sync')
 @ApiBearerAuth()
@@ -19,11 +17,11 @@ export class SyncController {
     @Param('table') table: string,
     @Query('since') since?: string,
   ) {
-    if (!SYNC_TABLES.includes(table as SyncTable)) {
+    if (!(table in SYNC_TABLE_MAP)) {
       return { items: [] };
     }
     const sinceDate = since ? new Date(since) : undefined;
     const validSince = sinceDate && !isNaN(sinceDate.getTime()) ? sinceDate : undefined;
-    return this.syncService.pull(table as SyncTable, validSince);
+    return this.syncService.pull(table, validSince);
   }
 }
