@@ -26,6 +26,14 @@ export const ALL_PERMISSIONS = [
   // product type management
   'product_type:create',
   'product_type:update',
+  // folder management
+  'folder:create',
+  'folder:update',
+  'folder:delete',
+  // product collection management
+  'product_collection:create',
+  'product_collection:update',
+  'product_collection:delete',
 ] as const
 
 export type Permission = (typeof ALL_PERMISSIONS)[number]
