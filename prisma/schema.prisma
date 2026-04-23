@@ -34,7 +34,38 @@ model ProductType {
   characteristicsScheme   Json?            @map("characteristics_scheme")
   updatedAt               DateTime         @updatedAt @map("updated_at")
 
+  collections ProductCollection[]
+
   @@map("product_type")
+}
+
+model Folder {
+  id        Int      @id @default(autoincrement())
+  name      String
+  parentId  Int?     @map("parent_id")
+  sortOrder Int      @default(0) @map("sort_order")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  parent      Folder?             @relation("FolderTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children    Folder[]            @relation("FolderTree")
+  collections ProductCollection[]
+
+  @@map("folder")
+}
+
+model ProductCollection {
+  id                   Int      @id @default(autoincrement())
+  name                 String
+  folderId             Int?     @map("folder_id")
+  defaultProductTypeId Int?     @map("default_product_type_id")
+  sortOrder            Int      @default(0) @map("sort_order")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  folder             Folder?      @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  defaultProductType ProductType? @relation(fields: [defaultProductTypeId], references: [id], onDelete: SetNull)
+
+  @@unique([folderId, name])
+  @@map("product_collection")
 }
 
 model Employee {

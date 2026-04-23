@@ -8,6 +8,8 @@ export const SYNC_TABLE_MAP: Record<string, keyof PrismaClient> = {
   organization: 'organization',
   warehouse: 'warehouse',
   product_type: 'productType',
+  folder: 'folder',
+  product_collection: 'productCollection',
 };
 
 export interface SyncResult<T = unknown> {

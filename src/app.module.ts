@@ -15,6 +15,8 @@ import { SyncModule } from './modules/sync/sync.module';
 import { EmployeeModule } from './modules/employee/employee.module';
 import { RoleModule } from './modules/role/role.module';
 import { ProductTypeModule } from './modules/product-type/product-type.module';
+import { FolderModule } from './modules/folder/folder.module';
+import { ProductCollectionModule } from './modules/product-collection/product-collection.module';
 
 @Module({
   imports: [
@@ -31,6 +33,8 @@ import { ProductTypeModule } from './modules/product-type/product-type.module';
     EmployeeModule,
     RoleModule,
     ProductTypeModule,
+    FolderModule,
+    ProductCollectionModule,
     ServeStaticModule.forRoot({
       rootPath: join(__dirname, '..', 'frontend'),
       exclude: ['/api/{*path}'],
