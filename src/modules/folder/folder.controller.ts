@@ -3,6 +3,8 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseIntPipe,
   Patch,
@@ -55,5 +57,34 @@ export class FolderController {
   @Delete(':id')
   delete(@Param('id', ParseIntPipe) id: number) {
     return this.folderService.delete(id);
+  }
+
+  @ApiOperation({ summary: 'Pin folder' })
+  @RequirePermissions('folder:pin')
+  @Post(':id/pin')
+  @HttpCode(HttpStatus.OK)
+  pin(@Param('id', ParseIntPipe) id: number) {
+    return this.folderService.pin(id);
+  }
+
+  @ApiOperation({ summary: 'Unpin folder' })
+  @RequirePermissions('folder:pin')
+  @Delete(':id/pin')
+  unpin(@Param('id', ParseIntPipe) id: number) {
+    return this.folderService.unpin(id);
+  }
+
+  @ApiOperation({ summary: 'Move folder up in pin order' })
+  @RequirePermissions('folder:pin')
+  @Patch(':id/move-up')
+  moveUp(@Param('id', ParseIntPipe) id: number) {
+    return this.folderService.moveUp(id);
+  }
+
+  @ApiOperation({ summary: 'Move folder down in pin order' })
+  @RequirePermissions('folder:pin')
+  @Patch(':id/move-down')
+  moveDown(@Param('id', ParseIntPipe) id: number) {
+    return this.folderService.moveDown(id);
   }
 }
