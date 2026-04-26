@@ -3,6 +3,8 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseIntPipe,
   Patch,
@@ -55,5 +57,34 @@ export class ProductCollectionController {
   @Delete(':id')
   delete(@Param('id', ParseIntPipe) id: number) {
     return this.productCollectionService.delete(id);
+  }
+
+  @ApiOperation({ summary: 'Pin product collection' })
+  @RequirePermissions('product_collection:pin')
+  @Post(':id/pin')
+  @HttpCode(HttpStatus.OK)
+  pin(@Param('id', ParseIntPipe) id: number) {
+    return this.productCollectionService.pin(id);
+  }
+
+  @ApiOperation({ summary: 'Unpin product collection' })
+  @RequirePermissions('product_collection:pin')
+  @Delete(':id/pin')
+  unpin(@Param('id', ParseIntPipe) id: number) {
+    return this.productCollectionService.unpin(id);
+  }
+
+  @ApiOperation({ summary: 'Move product collection up in pin order' })
+  @RequirePermissions('product_collection:pin')
+  @Patch(':id/move-up')
+  moveUp(@Param('id', ParseIntPipe) id: number) {
+    return this.productCollectionService.moveUp(id);
+  }
+
+  @ApiOperation({ summary: 'Move product collection down in pin order' })
+  @RequirePermissions('product_collection:pin')
+  @Patch(':id/move-down')
+  moveDown(@Param('id', ParseIntPipe) id: number) {
+    return this.productCollectionService.moveDown(id);
   }
 }
