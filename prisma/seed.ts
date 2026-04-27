@@ -261,7 +261,17 @@ const COUNTRIES: { code: string; currency: string }[] = [
   { code: 'ZW', currency: 'ZWL' },
 ];
 
+const MEASURE_CODES = ['pcs', 'kg', 'g', 't', 'l', 'ml', 'm', 'cm', 'mm', 'm2', 'hour', 'day'];
+
 async function main() {
+  for (const code of MEASURE_CODES) {
+    await prisma.productMeasure.upsert({
+      where: { code },
+      update: {},
+      create: { code, name: null },
+    });
+  }
+
   for (const country of COUNTRIES) {
     await prisma.country.upsert({
       where: { code: country.code },

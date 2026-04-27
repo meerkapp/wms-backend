@@ -24,6 +24,34 @@ enum SkuMode {
   CUSTOM
 }
 
+enum BarcodeType {
+  FACTORY
+  CUSTOM
+
+  @@map("barcode_type")
+}
+
+model ProductMeasure {
+  id        Int      @id @default(autoincrement())
+  name      String?  @unique
+  code      String?  @unique
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  products ProductItem[]
+
+  @@map("product_measure")
+}
+
+model ProductBrand {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  products ProductItem[]
+
+  @@map("product_brand")
+}
+
 model ProductType {
   id                      Int              @id @default(autoincrement())
   name                    String
@@ -35,6 +63,7 @@ model ProductType {
   updatedAt               DateTime         @updatedAt @map("updated_at")
 
   collections ProductCollection[]
+  items       ProductItem[]
 
   @@map("product_type")
 }
@@ -65,9 +94,78 @@ model ProductCollection {
 
   folder             Folder?      @relation(fields: [folderId], references: [id], onDelete: SetNull)
   defaultProductType ProductType? @relation(fields: [defaultProductTypeId], references: [id], onDelete: SetNull)
+  items              ProductItem[]
 
   @@unique([folderId, name])
   @@map("product_collection")
+}
+
+model ProductItem {
+  id                  Int               @id @default(autoincrement())
+  sku                 String            @unique
+  name                String
+  productCollectionId Int?              @map("product_collection_id")
+  productTypeId       Int               @map("product_type_id")
+  productBrandId      Int?              @map("product_brand_id")
+  productMeasureId    Int?              @map("product_measure_id")
+  countryId           Int?              @map("country_id")
+  characteristics     Json              @default("{}") @map("characteristics")
+  writeoffStrategy    WriteoffStrategy? @map("writeoff_strategy")
+  isPublic            Boolean           @default(false) @map("is_public")
+  updatedAt           DateTime          @updatedAt @map("updated_at")
+
+  productCollection ProductCollection? @relation(fields: [productCollectionId], references: [id], onDelete: SetNull)
+  productType       ProductType        @relation(fields: [productTypeId], references: [id])
+  productBrand      ProductBrand?      @relation(fields: [productBrandId], references: [id], onDelete: SetNull)
+  productMeasure    ProductMeasure?    @relation(fields: [productMeasureId], references: [id], onDelete: SetNull)
+  country           Country?           @relation(fields: [countryId], references: [id], onDelete: SetNull)
+  barcodes          ProductBarcode[]
+  packages          ProductPackage[]
+  shipments         ProductShipment[]
+
+  @@map("product_item")
+}
+
+model ProductBarcode {
+  id            Int         @id @default(autoincrement())
+  code          String
+  type          BarcodeType @default(FACTORY)
+  productItemId Int         @map("product_item_id")
+  updatedAt     DateTime    @updatedAt @map("updated_at")
+
+  productItem ProductItem @relation(fields: [productItemId], references: [id], onDelete: Cascade)
+
+  @@unique([code, type])
+  @@map("product_barcode")
+}
+
+model ProductPackage {
+  id               Int      @id @default(autoincrement())
+  name             String
+  productItemId    Int      @map("product_item_id")
+  conversionFactor Float    @default(1) @map("conversion_factor")
+  retailPrice      Decimal  @default(0) @map("retail_price") @db.Decimal(10, 2)
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  productItem ProductItem @relation(fields: [productItemId], references: [id], onDelete: Cascade)
+
+  @@map("product_package")
+}
+
+model ProductShipment {
+  id            Int       @id @default(autoincrement())
+  warehouseId   Int       @map("warehouse_id")
+  productItemId Int       @map("product_item_id")
+  arrivalDate   DateTime  @map("arrival_date")
+  expiryDate    DateTime? @map("expiry_date") @db.Date
+  quantity      Decimal   @default(0) @db.Decimal(8, 2)
+  price         Decimal   @default(0) @db.Decimal(10, 2)
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  warehouse   Warehouse   @relation(fields: [warehouseId], references: [id])
+  productItem ProductItem @relation(fields: [productItemId], references: [id])
+
+  @@map("product_shipment")
 }
 
 model Employee {
@@ -152,6 +250,7 @@ model Country {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   localities Locality[]
+  products   ProductItem[]
 
   @@map("country")
 }
@@ -188,9 +287,10 @@ model Warehouse {
   localityId     Int      @map("locality_id")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
-  organization Organization @relation(fields: [organizationId], references: [id])
-  locality     Locality     @relation(fields: [localityId], references: [id])
+  organization Organization      @relation(fields: [organizationId], references: [id])
+  locality     Locality          @relation(fields: [localityId], references: [id])
   employees    Employee[]
+  shipments    ProductShipment[]
 
   @@map("warehouse")
 }
