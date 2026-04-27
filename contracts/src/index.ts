@@ -1,4 +1,3 @@
-export * from './generated/schemas'
 export * from './common/pagination'
 export * from './modules/auth'
 export * from './modules/organization'
