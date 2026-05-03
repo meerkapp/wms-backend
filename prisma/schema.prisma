@@ -12,6 +12,174 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum CurrencyCode {
+  AED
+  AFN
+  ALL
+  AMD
+  ANG
+  AOA
+  ARS
+  AUD
+  AWG
+  AZN
+  BAM
+  BBD
+  BDT
+  BGN
+  BHD
+  BIF
+  BMD
+  BND
+  BOB
+  BRL
+  BSD
+  BTN
+  BWP
+  BYN
+  BZD
+  CAD
+  CDF
+  CHF
+  CLP
+  CNY
+  COP
+  CRC
+  CUP
+  CVE
+  CZK
+  DJF
+  DKK
+  DOP
+  DZD
+  EGP
+  ERN
+  ETB
+  EUR
+  FJD
+  FKP
+  GBP
+  GEL
+  GHS
+  GIP
+  GMD
+  GNF
+  GTQ
+  GYD
+  HKD
+  HNL
+  HTG
+  HUF
+  IDR
+  ILS
+  INR
+  IQD
+  IRR
+  ISK
+  JMD
+  JOD
+  JPY
+  KES
+  KGS
+  KHR
+  KMF
+  KPW
+  KRW
+  KWD
+  KYD
+  KZT
+  LAK
+  LBP
+  LKR
+  LRD
+  LSL
+  LYD
+  MAD
+  MDL
+  MGA
+  MKD
+  MMK
+  MNT
+  MOP
+  MRU
+  MUR
+  MVR
+  MWK
+  MXN
+  MYR
+  MZN
+  NAD
+  NGN
+  NIO
+  NOK
+  NPR
+  NZD
+  OMR
+  PAB
+  PEN
+  PGK
+  PHP
+  PKR
+  PLN
+  PYG
+  QAR
+  RON
+  RSD
+  RUB
+  RWF
+  SAR
+  SBD
+  SCR
+  SDG
+  SEK
+  SGD
+  SHP
+  SLE
+  SOS
+  SRD
+  SSP
+  STN
+  SYP
+  SZL
+  THB
+  TJS
+  TMT
+  TND
+  TOP
+  TRY
+  TTD
+  TWD
+  TZS
+  UAH
+  UGX
+  USD
+  UYU
+  UZS
+  VES
+  VND
+  VUV
+  WST
+  XAF
+  XCD
+  XOF
+  XPF
+  YER
+  ZAR
+  ZMW
+  ZWL
+
+  @@map("currency_code")
+}
+
+enum PriceListTargetType {
+  WAREHOUSE
+  ORGANIZATION
+  LOCALITY
+  COUNTRY
+
+  @@map("price_list_target_type")
+}
+
 enum WriteoffStrategy {
   FIFO
   LIFO
@@ -92,8 +260,8 @@ model ProductCollection {
   pinOrder             Int?      @map("pin_order")
   updatedAt            DateTime  @updatedAt @map("updated_at")
 
-  folder             Folder?      @relation(fields: [folderId], references: [id], onDelete: SetNull)
-  defaultProductType ProductType? @relation(fields: [defaultProductTypeId], references: [id], onDelete: SetNull)
+  folder             Folder?       @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  defaultProductType ProductType?  @relation(fields: [defaultProductTypeId], references: [id], onDelete: SetNull)
   items              ProductItem[]
 
   @@unique([folderId, name])
@@ -141,31 +309,86 @@ model ProductBarcode {
 
 model ProductPackage {
   id               Int      @id @default(autoincrement())
-  name             String
+  name             String?
+  isBase           Boolean  @default(false) @map("is_base")
   productItemId    Int      @map("product_item_id")
   conversionFactor Float    @default(1) @map("conversion_factor")
-  retailPrice      Decimal  @default(0) @map("retail_price") @db.Decimal(10, 2)
   updatedAt        DateTime @updatedAt @map("updated_at")
 
-  productItem ProductItem @relation(fields: [productItemId], references: [id], onDelete: Cascade)
+  productItem ProductItem    @relation(fields: [productItemId], references: [id], onDelete: Cascade)
+  prices      ProductPrice[]
 
+  @@unique([productItemId, name])
   @@map("product_package")
 }
 
 model ProductShipment {
-  id            Int       @id @default(autoincrement())
-  warehouseId   Int       @map("warehouse_id")
-  productItemId Int       @map("product_item_id")
-  arrivalDate   DateTime  @map("arrival_date")
-  expiryDate    DateTime? @map("expiry_date") @db.Date
-  quantity      Decimal   @default(0) @db.Decimal(8, 2)
-  price         Decimal   @default(0) @db.Decimal(10, 2)
-  updatedAt     DateTime  @updatedAt @map("updated_at")
+  id            Int          @id @default(autoincrement())
+  warehouseId   Int          @map("warehouse_id")
+  productItemId Int          @map("product_item_id")
+  arrivalDate   DateTime     @map("arrival_date")
+  expiryDate    DateTime?    @map("expiry_date") @db.Date
+  quantity      Decimal      @default(0) @db.Decimal(8, 2)
+  priceAmount   BigInt       @default(0) @map("price_amount")
+  currency      CurrencyCode @default(RUB)
+  updatedAt     DateTime     @updatedAt @map("updated_at")
 
   warehouse   Warehouse   @relation(fields: [warehouseId], references: [id])
   productItem ProductItem @relation(fields: [productItemId], references: [id])
 
   @@map("product_shipment")
+}
+
+model PriceList {
+  id        Int          @id @default(autoincrement())
+  name      String       @db.VarChar(255)
+  currency  CurrencyCode @default(RUB)
+  isDefault Boolean      @default(false) @map("is_default")
+  createdAt DateTime     @default(now()) @map("created_at")
+  updatedAt DateTime     @updatedAt @map("updated_at")
+
+  prices      ProductPrice[]
+  assignments PriceListAssignment[]
+
+  @@map("price_list")
+}
+
+model PriceListAssignment {
+  id          Int                 @id @default(autoincrement())
+  priceListId Int                 @map("price_list_id")
+  targetType  PriceListTargetType @map("target_type")
+
+  warehouseId    Int? @map("warehouse_id")
+  organizationId Int? @map("organization_id")
+  localityId     Int? @map("locality_id")
+  countryId      Int? @map("country_id")
+
+  priceList    PriceList     @relation(fields: [priceListId], references: [id], onDelete: Cascade)
+  warehouse    Warehouse?    @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  locality     Locality?     @relation(fields: [localityId], references: [id], onDelete: Cascade)
+  country      Country?      @relation(fields: [countryId], references: [id], onDelete: Cascade)
+
+  @@unique([priceListId, warehouseId])
+  @@unique([priceListId, organizationId])
+  @@unique([priceListId, localityId])
+  @@unique([priceListId, countryId])
+  @@map("price_list_assignment")
+}
+
+model ProductPrice {
+  id               Int      @id @default(autoincrement())
+  priceListId      Int      @map("price_list_id")
+  productPackageId Int      @map("product_package_id")
+  priceAmount      BigInt   @map("price_amount")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  priceList      PriceList      @relation(fields: [priceListId], references: [id], onDelete: Cascade)
+  productPackage ProductPackage @relation(fields: [productPackageId], references: [id], onDelete: Cascade)
+
+  @@unique([priceListId, productPackageId])
+  @@map("product_price")
 }
 
 model Employee {
@@ -188,7 +411,7 @@ model Employee {
 }
 
 model EmployeeRole {
-  id        Int   @id @default(autoincrement())
+  id        Int      @id @default(autoincrement())
   name      String   @unique
   color     String
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -200,7 +423,7 @@ model EmployeeRole {
 }
 
 model EmployeePermission {
-  id        Int   @id @default(autoincrement())
+  id        Int      @id @default(autoincrement())
   name      String   @unique
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -218,9 +441,9 @@ model ServerSettings {
 }
 
 model EmployeeRoleAssignment {
-  id             Int   @id @default(autoincrement())
+  id             Int      @id @default(autoincrement())
   employeeId     String   @map("employee_id") @db.Uuid
-  employeeRoleId Int   @map("employee_role_id")
+  employeeRoleId Int      @map("employee_role_id")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
   employee     Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
@@ -231,9 +454,9 @@ model EmployeeRoleAssignment {
 }
 
 model EmployeeRolePermission {
-  id                   Int   @id @default(autoincrement())
-  employeeRoleId       Int   @map("employee_role_id")
-  employeePermissionId Int   @map("employee_permission_id")
+  id                   Int      @id @default(autoincrement())
+  employeeRoleId       Int      @map("employee_role_id")
+  employeePermissionId Int      @map("employee_permission_id")
   updatedAt            DateTime @updatedAt @map("updated_at")
 
   employeeRole       EmployeeRole       @relation(fields: [employeeRoleId], references: [id], onDelete: Cascade)
@@ -246,11 +469,11 @@ model EmployeeRolePermission {
 model Country {
   id        Int      @id @default(autoincrement())
   code      String   @unique @db.Char(2)
-  currency  String?  @db.Char(3)
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  localities Locality[]
-  products   ProductItem[]
+  localities           Locality[]
+  products             ProductItem[]
+  priceListAssignments PriceListAssignment[]
 
   @@map("country")
 }
@@ -261,8 +484,9 @@ model Locality {
   countryId Int      @map("country_id")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  country    Country     @relation(fields: [countryId], references: [id])
-  warehouses Warehouse[]
+  country              Country               @relation(fields: [countryId], references: [id])
+  warehouses           Warehouse[]
+  priceListAssignments PriceListAssignment[]
 
   @@map("locality")
 }
@@ -273,7 +497,8 @@ model Organization {
   website   String?
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  warehouses Warehouse[]
+  warehouses           Warehouse[]
+  priceListAssignments PriceListAssignment[]
 
   @@map("organization")
 }
@@ -287,10 +512,11 @@ model Warehouse {
   localityId     Int      @map("locality_id")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
-  organization Organization      @relation(fields: [organizationId], references: [id])
-  locality     Locality          @relation(fields: [localityId], references: [id])
-  employees    Employee[]
-  shipments    ProductShipment[]
+  organization         Organization          @relation(fields: [organizationId], references: [id])
+  locality             Locality              @relation(fields: [localityId], references: [id])
+  employees            Employee[]
+  shipments            ProductShipment[]
+  priceListAssignments PriceListAssignment[]
 
   @@map("warehouse")
 }
