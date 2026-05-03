@@ -21,7 +21,7 @@ export const ProductItemWithRelationsSchema = ProductItemSchema.extend({
 });
 
 export const ProductItemStatsQuerySchema = z.object({
-  collectionId: z.coerce.number().int().positive(),
+  productCollectionId: z.coerce.number().int().positive(),
   warehouseId: z.coerce.number().int().positive(),
 });
 
