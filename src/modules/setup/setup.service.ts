@@ -55,6 +55,14 @@ export class SetupService {
         create: { id: 1, setupCompleted: true },
       });
 
+      await tx.priceList.create({
+        data: {
+          name: 'Default',
+          currency: 'EUR',
+          isDefault: true,
+        },
+      });
+
       return newEmployee;
     });
 
