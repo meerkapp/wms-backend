@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/commo
 import { ConfigService } from '@nestjs/config';
 import { Client, Notification } from 'pg';
 import { SyncGateway } from '../../modules/sync/sync.gateway';
+import { FETCH_MODELS, SYNC_MODELS } from '../../modules/sync/sync.service';
 
 interface DbChangePayload {
   table: string;
@@ -9,22 +10,7 @@ interface DbChangePayload {
   id: number;
 }
 
-const TABLE_TO_MODEL: Record<string, string> = {
-  country: 'country',
-  locality: 'locality',
-  organization: 'organization',
-  warehouse: 'warehouse',
-  product_type: 'productType',
-  folder: 'folder',
-  product_collection: 'productCollection',
-  product_measure: 'productMeasure',
-  product_brand: 'productBrand',
-  product_item: 'productItem',
-  product_shipment: 'productShipment',
-  product_barcode: 'productBarcode',
-  product_package: 'productPackage',
-  product_item_stats: 'productItemStats',
-};
+const SYNC_TABLES = new Set([...Object.keys(SYNC_MODELS), ...Object.keys(FETCH_MODELS)]);
 
 @Injectable()
 export class DbListenerService implements OnModuleInit, OnModuleDestroy {
@@ -124,17 +110,16 @@ export class DbListenerService implements OnModuleInit, OnModuleDestroy {
 
   private handleNotification(payload: DbChangePayload) {
     const { table, op, id } = payload;
-    const model = TABLE_TO_MODEL[table];
 
-    if (!model) {
+    if (!SYNC_TABLES.has(table)) {
       this.logger.warn(`Ignoring DB change for unsupported table: ${table}`);
       return;
     }
 
-    let changes = this.pendingChanges.get(model);
+    let changes = this.pendingChanges.get(table);
     if (!changes) {
       changes = { added: new Set(), modified: new Set(), removed: new Set() };
-      this.pendingChanges.set(model, changes);
+      this.pendingChanges.set(table, changes);
     }
 
     if (op === 'insert') changes.added.add(id);
@@ -150,8 +135,8 @@ export class DbListenerService implements OnModuleInit, OnModuleDestroy {
   }
 
   private flush() {
-    for (const [model, changes] of this.pendingChanges) {
-      this.syncGateway.notifyChange(model, {
+    for (const [table, changes] of this.pendingChanges) {
+      this.syncGateway.notifyChange(table, {
         added: [...changes.added].map((id) => ({ id })),
         modified: [...changes.modified].map((id) => ({ id })),
         removed: [...changes.removed].map((id) => ({ id })),

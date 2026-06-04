@@ -18,6 +18,6 @@ export class SyncModule implements OnModuleInit {
   ) {}
 
   onModuleInit() {
-    this.syncService.registerFetchHandler('productItem', this.productItemService);
+    this.syncService.registerFetchHandler('product_item', this.productItemService);
   }
 }
