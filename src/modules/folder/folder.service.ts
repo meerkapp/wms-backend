@@ -2,16 +2,12 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { buildPinnedEntries, PinnedEntry } from '../../common/utils/pin-order.util';
-import { SyncGateway } from '../sync/sync.gateway';
 import { CreateFolderDto } from './dto/create-folder.dto';
 import { UpdateFolderDto } from './dto/update-folder.dto';
 
 @Injectable()
 export class FolderService {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly syncGateway: SyncGateway,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async findAll() {
     const [pinned, unpinned] = await Promise.all([
@@ -35,7 +31,6 @@ export class FolderService {
 
   async create(dto: CreateFolderDto) {
     const result = await this.prisma.folder.create({ data: dto });
-    this.syncGateway.notifyChange('folder', { added: [result] });
     return result;
   }
 
@@ -48,7 +43,6 @@ export class FolderService {
         }
         throw e;
       });
-    this.syncGateway.notifyChange('folder', { modified: [result] });
     return result;
   }
 
@@ -63,15 +57,12 @@ export class FolderService {
       throw new BadRequestException('Cannot delete folder with collections');
     }
 
-    const result = await this.prisma.folder
-      .delete({ where: { id } })
-      .catch((e: unknown) => {
-        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2025') {
-          throw new NotFoundException(`Folder ${id} not found`);
-        }
-        throw e;
-      });
-    this.syncGateway.notifyChange('folder', { removed: [result] });
+    const result = await this.prisma.folder.delete({ where: { id } }).catch((e: unknown) => {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2025') {
+        throw new NotFoundException(`Folder ${id} not found`);
+      }
+      throw e;
+    });
     return result;
   }
 
@@ -80,8 +71,10 @@ export class FolderService {
     if (!folder) throw new NotFoundException(`Folder ${id} not found`);
     if (folder.pinnedAt) return folder;
 
-    const result = await this.prisma.folder.update({ where: { id }, data: { pinnedAt: new Date(), pinOrder: null } });
-    this.syncGateway.notifyChange('folder', { modified: [result] });
+    const result = await this.prisma.folder.update({
+      where: { id },
+      data: { pinnedAt: new Date(), pinOrder: null },
+    });
     return result;
   }
 
@@ -94,7 +87,6 @@ export class FolderService {
         }
         throw e;
       });
-    this.syncGateway.notifyChange('folder', { modified: [result] });
     return result;
   }
 
@@ -112,12 +104,16 @@ export class FolderService {
     if (!folder.pinnedAt) throw new BadRequestException('Folder is not pinned');
 
     const [pinnedFolders, pinnedCollections] = await Promise.all([
-      this.prisma.folder.findMany({ where: { parentId: folder.parentId, pinnedAt: { not: null } } }),
-      this.prisma.productCollection.findMany({ where: { folderId: folder.parentId, pinnedAt: { not: null } } }),
+      this.prisma.folder.findMany({
+        where: { parentId: folder.parentId, pinnedAt: { not: null } },
+      }),
+      this.prisma.productCollection.findMany({
+        where: { folderId: folder.parentId, pinnedAt: { not: null } },
+      }),
     ]);
 
     const entries = buildPinnedEntries(pinnedFolders, pinnedCollections);
-    const index = entries.findIndex(e => e.kind === 'folder' && e.id === id);
+    const index = entries.findIndex((e) => e.kind === 'folder' && e.id === id);
 
     if (direction === 'up') {
       if (index <= 0) return folder;
@@ -132,22 +128,24 @@ export class FolderService {
 
   private async applyPinOrder(entries: PinnedEntry[], folderId: number) {
     const folderOps = entries
-      .map((e, i) => e.kind === 'folder' ? this.prisma.folder.update({ where: { id: e.id }, data: { pinOrder: i + 1 } }) : null)
+      .map((e, i) =>
+        e.kind === 'folder'
+          ? this.prisma.folder.update({ where: { id: e.id }, data: { pinOrder: i + 1 } })
+          : null,
+      )
       .filter((op): op is NonNullable<typeof op> => op !== null);
 
     const collectionOps = entries
-      .map((e, i) => e.kind === 'collection' ? this.prisma.productCollection.update({ where: { id: e.id }, data: { pinOrder: i + 1 } }) : null)
+      .map((e, i) =>
+        e.kind === 'collection'
+          ? this.prisma.productCollection.update({ where: { id: e.id }, data: { pinOrder: i + 1 } })
+          : null,
+      )
       .filter((op): op is NonNullable<typeof op> => op !== null);
 
     const results = await this.prisma.$transaction([...folderOps, ...collectionOps]);
     const updatedFolders = results.slice(0, folderOps.length);
-    const updatedCollections = results.slice(folderOps.length);
 
-    this.syncGateway.notifyChange('folder', { modified: updatedFolders });
-    if (updatedCollections.length > 0) {
-      this.syncGateway.notifyChange('product_collection', { modified: updatedCollections });
-    }
-
-    return updatedFolders.find(f => f.id === folderId)!;
+    return updatedFolders.find((f) => f.id === folderId)!;
   }
 }

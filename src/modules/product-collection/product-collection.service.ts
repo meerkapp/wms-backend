@@ -1,17 +1,18 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { buildPinnedEntries, PinnedEntry } from '../../common/utils/pin-order.util';
-import { SyncGateway } from '../sync/sync.gateway';
 import { CreateProductCollectionDto } from './dto/create-product-collection.dto';
 import { UpdateProductCollectionDto } from './dto/update-product-collection.dto';
 
 @Injectable()
 export class ProductCollectionService {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly syncGateway: SyncGateway,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async findAll() {
     const [pinned, unpinned] = await Promise.all([
@@ -34,15 +35,12 @@ export class ProductCollectionService {
   }
 
   async create(dto: CreateProductCollectionDto) {
-    const result = await this.prisma.productCollection
-      .create({ data: dto })
-      .catch((e: unknown) => {
-        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
-          throw new ConflictException('Collection with this name already exists in the folder');
-        }
-        throw e;
-      });
-    this.syncGateway.notifyChange('product_collection', { added: [result] });
+    const result = await this.prisma.productCollection.create({ data: dto }).catch((e: unknown) => {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+        throw new ConflictException('Collection with this name already exists in the folder');
+      }
+      throw e;
+    });
     return result;
   }
 
@@ -52,11 +50,11 @@ export class ProductCollectionService {
       .catch((e: unknown) => {
         if (e instanceof Prisma.PrismaClientKnownRequestError) {
           if (e.code === 'P2025') throw new NotFoundException(`ProductCollection ${id} not found`);
-          if (e.code === 'P2002') throw new ConflictException('Collection with this name already exists in the folder');
+          if (e.code === 'P2002')
+            throw new ConflictException('Collection with this name already exists in the folder');
         }
         throw e;
       });
-    this.syncGateway.notifyChange('product_collection', { modified: [result] });
     return result;
   }
 
@@ -69,7 +67,6 @@ export class ProductCollectionService {
         }
         throw e;
       });
-    this.syncGateway.notifyChange('product_collection', { removed: [result] });
     return result;
   }
 
@@ -78,8 +75,10 @@ export class ProductCollectionService {
     if (!collection) throw new NotFoundException(`ProductCollection ${id} not found`);
     if (collection.pinnedAt) return collection;
 
-    const result = await this.prisma.productCollection.update({ where: { id }, data: { pinnedAt: new Date(), pinOrder: null } });
-    this.syncGateway.notifyChange('product_collection', { modified: [result] });
+    const result = await this.prisma.productCollection.update({
+      where: { id },
+      data: { pinnedAt: new Date(), pinOrder: null },
+    });
     return result;
   }
 
@@ -92,7 +91,6 @@ export class ProductCollectionService {
         }
         throw e;
       });
-    this.syncGateway.notifyChange('product_collection', { modified: [result] });
     return result;
   }
 
@@ -110,12 +108,16 @@ export class ProductCollectionService {
     if (!collection.pinnedAt) throw new BadRequestException('ProductCollection is not pinned');
 
     const [pinnedFolders, pinnedCollections] = await Promise.all([
-      this.prisma.folder.findMany({ where: { parentId: collection.folderId, pinnedAt: { not: null } } }),
-      this.prisma.productCollection.findMany({ where: { folderId: collection.folderId, pinnedAt: { not: null } } }),
+      this.prisma.folder.findMany({
+        where: { parentId: collection.folderId, pinnedAt: { not: null } },
+      }),
+      this.prisma.productCollection.findMany({
+        where: { folderId: collection.folderId, pinnedAt: { not: null } },
+      }),
     ]);
 
     const entries = buildPinnedEntries(pinnedFolders, pinnedCollections);
-    const index = entries.findIndex(e => e.kind === 'collection' && e.id === id);
+    const index = entries.findIndex((e) => e.kind === 'collection' && e.id === id);
 
     if (direction === 'up') {
       if (index <= 0) return collection;
@@ -130,22 +132,24 @@ export class ProductCollectionService {
 
   private async applyPinOrder(entries: PinnedEntry[], collectionId: number) {
     const folderOps = entries
-      .map((e, i) => e.kind === 'folder' ? this.prisma.folder.update({ where: { id: e.id }, data: { pinOrder: i + 1 } }) : null)
+      .map((e, i) =>
+        e.kind === 'folder'
+          ? this.prisma.folder.update({ where: { id: e.id }, data: { pinOrder: i + 1 } })
+          : null,
+      )
       .filter((op): op is NonNullable<typeof op> => op !== null);
 
     const collectionOps = entries
-      .map((e, i) => e.kind === 'collection' ? this.prisma.productCollection.update({ where: { id: e.id }, data: { pinOrder: i + 1 } }) : null)
+      .map((e, i) =>
+        e.kind === 'collection'
+          ? this.prisma.productCollection.update({ where: { id: e.id }, data: { pinOrder: i + 1 } })
+          : null,
+      )
       .filter((op): op is NonNullable<typeof op> => op !== null);
 
     const results = await this.prisma.$transaction([...folderOps, ...collectionOps]);
-    const updatedFolders = results.slice(0, folderOps.length);
     const updatedCollections = results.slice(folderOps.length);
 
-    if (updatedFolders.length > 0) {
-      this.syncGateway.notifyChange('folder', { modified: updatedFolders });
-    }
-    this.syncGateway.notifyChange('product_collection', { modified: updatedCollections });
-
-    return updatedCollections.find(c => c.id === collectionId)!;
+    return updatedCollections.find((c) => c.id === collectionId)!;
   }
 }

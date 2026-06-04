@@ -5,6 +5,7 @@ import { join } from 'path';
 import { AppController } from './app.controller';
 import { PrismaModule } from './common/prisma/prisma.module';
 import { RedisModule } from './common/redis/redis.module';
+import { DbListenerModule } from './common/db-listener/db-listener.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { PresenceModule } from './modules/presence/presence.module';
 import { LocalityModule } from './modules/locality/locality.module';
@@ -17,12 +18,15 @@ import { RoleModule } from './modules/role/role.module';
 import { ProductTypeModule } from './modules/product-type/product-type.module';
 import { FolderModule } from './modules/folder/folder.module';
 import { ProductCollectionModule } from './modules/product-collection/product-collection.module';
+import { PriceListModule } from './modules/price-list/price-list.module';
+import { ProductItemModule } from './modules/product-item/product-item.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,
     RedisModule,
+    DbListenerModule,
     AuthModule,
     PresenceModule,
     SetupModule,
@@ -35,6 +39,8 @@ import { ProductCollectionModule } from './modules/product-collection/product-co
     ProductTypeModule,
     FolderModule,
     ProductCollectionModule,
+    PriceListModule,
+    ProductItemModule,
     ServeStaticModule.forRoot({
       rootPath: join(__dirname, '..', 'frontend'),
       exclude: ['/api/{*path}'],

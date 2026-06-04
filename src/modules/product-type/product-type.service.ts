@@ -1,7 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import { SyncGateway } from '../sync/sync.gateway';
 import { CreateProductTypeDto } from './dto/create-product-type.dto';
 import { UpdateProductTypeDto } from './dto/update-product-type.dto';
 
@@ -13,10 +12,7 @@ function toJsonInput(value: unknown): Prisma.InputJsonValue | typeof Prisma.DbNu
 
 @Injectable()
 export class ProductTypeService {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly syncGateway: SyncGateway,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async findAll() {
     return this.prisma.productType.findMany({ orderBy: { name: 'asc' } });
@@ -33,7 +29,6 @@ export class ProductTypeService {
     const result = await this.prisma.productType.create({
       data: { ...rest, characteristicsScheme: toJsonInput(characteristicsScheme) },
     });
-    this.syncGateway.notifyChange('product_type', { added: [result] });
     return result;
   }
 
@@ -50,7 +45,6 @@ export class ProductTypeService {
         }),
       },
     });
-    this.syncGateway.notifyChange('product_type', { modified: [result] });
     return result;
   }
 }
