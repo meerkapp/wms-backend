@@ -27,9 +27,11 @@ export const ProductItemStatsQuerySchema = z.object({
 
 export const ProductItemStatsSchema = z.object({
   id: z.number().int(),
-  retailPrice: z.bigint().nullable(),
+  productItemId: z.number().int(),
+  warehouseId: z.number().int(),
+  quantity: z.string(),
+  retailPrice: z.string().nullable(),
   currency: CurrencyCodeSchema.nullable(),
-  quantity: z.number(),
 });
 
 export type ProductItem = z.infer<typeof ProductItemSchema>;
