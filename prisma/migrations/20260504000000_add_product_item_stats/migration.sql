@@ -687,8 +687,17 @@ GROUP BY ps.product_item_id, ps.warehouse_id
 ON CONFLICT (product_item_id, warehouse_id) DO UPDATE
 SET quantity = EXCLUDED.quantity, updated_at = NOW();
 
+WITH resolved_prices AS (
+    SELECT
+        pis.id,
+        rp.retail_price,
+        rp.currency
+    FROM product_item_stats pis
+    CROSS JOIN LATERAL resolve_retail_price(pis.product_item_id, pis.warehouse_id) rp
+)
 UPDATE product_item_stats pis
-SET retail_price = rp.retail_price,
-    currency = rp.currency,
+SET retail_price = resolved_prices.retail_price,
+    currency = resolved_prices.currency,
     updated_at = NOW()
-FROM resolve_retail_price(pis.product_item_id, pis.warehouse_id) rp;
+FROM resolved_prices
+WHERE resolved_prices.id = pis.id;
