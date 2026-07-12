@@ -3,6 +3,14 @@ import { ProductItemModelSchema } from '../../generated/schemas/variants/pure/Pr
 import { ProductBrandSchema } from '../product-brand';
 import { ProductMeasureSchema } from '../product-measure';
 import { CurrencyCodeSchema } from '../../generated/schemas/enums/CurrencyCode.schema';
+import {
+  createSyncChangePayloadSchema,
+  createSyncFetchResponseSchema,
+  createSyncSocketPayloadSchema,
+  type SyncChangePayload,
+  type SyncFetchResponse,
+  type SyncSocketPayload,
+} from '../sync';
 
 export const ProductItemSchema = ProductItemModelSchema.omit({
   productCollection: true,
@@ -25,6 +33,13 @@ export const ProductItemStatsQuerySchema = z.object({
   warehouseId: z.coerce.number().int().positive(),
 });
 
+export const ProductItemStatsFetchQuerySchema = z.object({
+  warehouseId: z.coerce.number().int().positive(),
+  productCollectionId: z.coerce.number().int().positive().optional(),
+  cursor: z.string().min(1).optional(),
+  limit: z.coerce.number().int().positive().optional(),
+});
+
 export const ProductItemStatsSchema = z.object({
   id: z.number().int(),
   productItemId: z.number().int(),
@@ -32,9 +47,21 @@ export const ProductItemStatsSchema = z.object({
   quantity: z.string(),
   retailPrice: z.string().nullable(),
   currency: CurrencyCodeSchema.nullable(),
+  updatedAt: z.string(),
 });
+
+export const ProductItemStatsFetchResponseSchema =
+  createSyncFetchResponseSchema(ProductItemStatsSchema);
+export const ProductItemStatsChangePayloadSchema =
+  createSyncChangePayloadSchema(ProductItemStatsSchema);
+export const ProductItemStatsSocketPayloadSchema =
+  createSyncSocketPayloadSchema(ProductItemStatsSchema);
 
 export type ProductItem = z.infer<typeof ProductItemSchema>;
 export type ProductItemWithRelations = z.infer<typeof ProductItemWithRelationsSchema>;
 export type ProductItemStatsQuery = z.infer<typeof ProductItemStatsQuerySchema>;
+export type ProductItemStatsFetchQuery = z.infer<typeof ProductItemStatsFetchQuerySchema>;
 export type ProductItemStats = z.infer<typeof ProductItemStatsSchema>;
+export type ProductItemStatsFetchResponse = SyncFetchResponse<ProductItemStats>;
+export type ProductItemStatsChangePayload = SyncChangePayload<ProductItemStats>;
+export type ProductItemStatsSocketPayload = SyncSocketPayload<ProductItemStats>;

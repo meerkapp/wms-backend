@@ -16,3 +16,4 @@ export * from './modules/product-barcode';
 export * from './modules/product-package';
 export * from './modules/product-shipment';
 export * from './modules/price-list';
+export * from './modules/sync';
