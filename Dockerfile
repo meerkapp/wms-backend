@@ -15,11 +15,13 @@ WORKDIR /opt/app
 
 RUN npm install -g pnpm
 
-COPY package.json pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY contracts/package.json ./contracts/package.json
 RUN pnpm install --frozen-lockfile
 
 COPY . .
 RUN pnpm prisma generate
+RUN pnpm --filter @meerkapp/wms-contracts build
 RUN pnpm build
 RUN pnpm prune --prod --config.confirmModulesPurge=false
 
@@ -32,10 +34,12 @@ RUN apk add --no-cache curl
 COPY --from=builder /opt/app/dist ./dist
 COPY --from=builder /opt/app/node_modules ./node_modules
 COPY --from=builder /opt/app/package.json ./package.json
+COPY --from=builder /opt/app/contracts/package.json ./contracts/package.json
+COPY --from=builder /opt/app/contracts/dist ./contracts/dist
 COPY --from=builder /opt/app/prisma ./prisma
 COPY --from=frontend /opt/frontend/dist ./frontend
 
 EXPOSE 3000
 
 # Run migrations and start the server
-CMD ["sh", "-c", "pnpm run start:migrate:prod"]
+CMD ["npm", "run", "start:migrate:prod"]
