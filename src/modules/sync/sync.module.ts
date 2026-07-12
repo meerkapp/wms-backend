@@ -1,23 +1,15 @@
-import { Module, OnModuleInit } from '@nestjs/common';
-import { ProductItemModule } from '../product-item/product-item.module';
-import { ProductItemService } from '../product-item/product-item.service';
+import { Global, Module } from '@nestjs/common';
+import { JwtModule } from '@nestjs/jwt';
 import { SyncController } from './sync.controller';
+import { SyncEventsService } from './sync-events.service';
 import { SyncGateway } from './sync.gateway';
 import { SyncService } from './sync.service';
 
+@Global()
 @Module({
-  imports: [ProductItemModule],
+  imports: [JwtModule.register({})],
   controllers: [SyncController],
-  providers: [SyncService, SyncGateway],
-  exports: [SyncGateway],
+  providers: [SyncService, SyncGateway, SyncEventsService],
+  exports: [SyncGateway, SyncEventsService],
 })
-export class SyncModule implements OnModuleInit {
-  constructor(
-    private readonly syncService: SyncService,
-    private readonly productItemService: ProductItemService,
-  ) {}
-
-  onModuleInit() {
-    this.syncService.registerFetchHandler('product_item', this.productItemService);
-  }
-}
+export class SyncModule {}

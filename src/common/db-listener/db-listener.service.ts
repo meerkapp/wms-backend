@@ -1,8 +1,8 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Client, Notification } from 'pg';
-import { SyncGateway } from '../../modules/sync/sync.gateway';
-import { FETCH_MODELS, SYNC_MODELS } from '../../modules/sync/sync.service';
+import { SyncEventsService } from '../../modules/sync/sync-events.service';
+import { SYNC_TABLE_NAMES } from '../../modules/sync/sync.registry';
 
 interface DbChangePayload {
   table: string;
@@ -10,7 +10,7 @@ interface DbChangePayload {
   id: number;
 }
 
-const SYNC_TABLES = new Set([...Object.keys(SYNC_MODELS), ...Object.keys(FETCH_MODELS)]);
+const SYNC_TABLES = new Set<string>(SYNC_TABLE_NAMES);
 
 @Injectable()
 export class DbListenerService implements OnModuleInit, OnModuleDestroy {
@@ -29,7 +29,7 @@ export class DbListenerService implements OnModuleInit, OnModuleDestroy {
 
   constructor(
     private readonly configService: ConfigService,
-    private readonly syncGateway: SyncGateway,
+    private readonly syncEvents: SyncEventsService,
   ) {}
 
   async onModuleInit() {
@@ -40,7 +40,7 @@ export class DbListenerService implements OnModuleInit, OnModuleDestroy {
     this.isShuttingDown = true;
     if (this.flushTimer) clearTimeout(this.flushTimer);
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
-    this.flush();
+    await this.flush();
     if (this.client) await this.client.end();
   }
 
@@ -129,19 +129,25 @@ export class DbListenerService implements OnModuleInit, OnModuleDestroy {
     if (!this.flushTimer) {
       this.flushTimer = setTimeout(() => {
         this.flushTimer = null;
-        this.flush();
+        void this.flush();
       }, this.FLUSH_DELAY_MS);
     }
   }
 
-  private flush() {
-    for (const [table, changes] of this.pendingChanges) {
-      this.syncGateway.notifyChange(table, {
-        added: [...changes.added].map((id) => ({ id })),
-        modified: [...changes.modified].map((id) => ({ id })),
-        removed: [...changes.removed].map((id) => ({ id })),
-      });
-    }
+  private async flush() {
+    const pendingChanges = [...this.pendingChanges.entries()];
     this.pendingChanges.clear();
+
+    for (const [table, changes] of pendingChanges) {
+      try {
+        await this.syncEvents.emitTableIds(table, {
+          addedIds: [...changes.added],
+          modifiedIds: [...changes.modified],
+          removedIds: [...changes.removed],
+        });
+      } catch (err) {
+        this.logger.warn(`Failed to emit DB change for ${table}: ${(err as Error).message}`);
+      }
+    }
   }
 }

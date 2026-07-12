@@ -36,6 +36,11 @@ export async function createApp(
 export async function seedAdmin(app: INestApplication): Promise<{ access_token: string }> {
   // Re-sync permissions/superadmin role in case cleanDatabase wiped them
   await app.get(PermissionsSyncService).sync();
+  await app.get(PrismaService).country.upsert({
+    where: { code: 'AU' },
+    update: {},
+    create: { code: 'AU' },
+  });
   const res = await request(app.getHttpServer()).post('/api/setup/init').send(ADMIN).expect(201);
   return res.body as { access_token: string };
 }
@@ -51,6 +56,17 @@ export function extractCookie(res: request.Response, name: string): string | und
 export async function cleanDatabase(prisma: PrismaService): Promise<void> {
   await prisma.employeeRoleAssignment.deleteMany();
   await prisma.employee.deleteMany();
+  await prisma.productItemStats.deleteMany();
+  await prisma.productShipment.deleteMany();
+  await prisma.productBarcode.deleteMany();
+  await prisma.productPrice.deleteMany();
+  await prisma.productPackage.deleteMany();
+  await prisma.productItem.deleteMany();
+  await prisma.productCollection.deleteMany();
+  await prisma.folder.deleteMany();
+  await prisma.productType.deleteMany();
+  await prisma.priceListAssignment.deleteMany();
+  await prisma.priceList.deleteMany();
   await prisma.serverSettings.deleteMany();
   await prisma.warehouse.deleteMany();
   await prisma.locality.deleteMany();

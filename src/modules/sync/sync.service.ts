@@ -1,67 +1,204 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { PrismaClient } from '@prisma/client';
-import { mingoToPrisma } from '../../common/mingo/mingo-to-prisma';
+import type { ProductItemStatsFetchQuery } from '@meerkapp/wms-contracts';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import {
+  cursorFromItems,
+  encodeSyncCursor,
+  parseSyncCursor,
+  SyncCursorPosition,
+} from './sync-cursor';
+import { serializeSyncItems } from './sync-serializer';
+import { getSyncTableDefinition, updatedAfterWhere } from './sync.registry';
+import { SyncPullResponse } from './sync.types';
 
-export const SYNC_MODELS: Record<string, keyof PrismaClient> = {
-  country: 'country',
-  locality: 'locality',
-  organization: 'organization',
-  warehouse: 'warehouse',
-  product_type: 'productType',
-  folder: 'folder',
-  product_collection: 'productCollection',
-  product_measure: 'productMeasure',
-  product_brand: 'productBrand',
-  product_shipment: 'productShipment',
-  product_barcode: 'productBarcode',
-  product_package: 'productPackage',
-};
+export { parseSyncCursor } from './sync-cursor';
 
-export const FETCH_MODELS: Record<string, keyof PrismaClient> = {
-  product_shipment: 'productShipment',
-  product_item: 'productItem',
-  product_item_stats: 'productItemStats',
-};
+const MAX_LIMIT = 5000;
+const DEFAULT_FETCH_LIMIT = 5000;
 
-export interface SyncResult<T = unknown> {
-  items: T[];
+export interface ProductItemsFetchQuery {
+  id?: number;
+  productCollectionId?: number | null;
+  limit?: number;
 }
 
-export interface FetchHandler {
-  fetch(selector: Record<string, unknown>): Promise<SyncResult>;
+export interface ProductBarcodesFetchQuery {
+  code?: string;
+  productItemId?: number;
+  limit?: number;
+}
+
+export interface ProductShipmentsFetchQuery {
+  warehouseId: number;
+  productItemId?: number;
+  limit?: number;
 }
 
 @Injectable()
 export class SyncService {
-  private fetchHandlers = new Map<string, FetchHandler>();
-
-  registerFetchHandler(table: string, handler: FetchHandler): void {
-    this.fetchHandlers.set(table, handler);
-  }
-
   constructor(private readonly prisma: PrismaService) {}
 
-  async pull(table: string, since?: Date): Promise<SyncResult> {
-    const model = SYNC_MODELS[table];
-    if (!model) throw new BadRequestException(`Table ${table} does not support sync`);
+  async pull(
+    table: string,
+    cursor?: SyncCursorPosition,
+    limit?: number,
+  ): Promise<SyncPullResponse> {
+    const definition = getSyncTableDefinition(table);
+    const requestLimit = normalizeLimit(limit);
+    const queryLimit = requestLimit === undefined ? undefined : requestLimit + 1;
 
-    const where = since ? { updatedAt: { gt: since } } : {};
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const items = await (this.prisma[model] as any).findMany({ where });
-    return { items };
+    const rows = await definition.pull(this.prisma, {
+      cursor,
+      limit: queryLimit,
+    });
+
+    const hasMore = requestLimit !== undefined && rows.length > requestLimit;
+    const pageRows = hasMore ? rows.slice(0, requestLimit) : rows;
+    const items = serializeSyncItems(pageRows);
+    // A composite timestamp/id cursor prevents page-boundary loss while the
+    // longer-term revision/outbox cursor is not available yet.
+    const nextCursor = cursorFromItems(items) ?? (cursor ? encodeSyncCursor(cursor) : null);
+
+    return {
+      items,
+      cursor: nextCursor,
+      hasMore,
+    };
   }
 
-  async fetch(table: string, selector: Record<string, unknown>): Promise<SyncResult> {
-    const model = FETCH_MODELS[table];
-    if (!model) throw new BadRequestException(`Table ${table} does not support fetch`);
+  async fetchProductItems(query: ProductItemsFetchQuery): Promise<SyncPullResponse> {
+    const hasId = query.id !== undefined;
+    const hasCollection = query.productCollectionId !== undefined;
 
-    const customHandler = this.fetchHandlers.get(table);
-    if (customHandler) return customHandler.fetch(selector);
+    if (hasId === hasCollection) {
+      throw new BadRequestException('Provide exactly one of id or productCollectionId');
+    }
 
-    const where = mingoToPrisma(selector);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const items = await (this.prisma[model] as any).findMany({ where });
-    return { items };
+    const fetchLimit = normalizeLimit(query.limit) ?? DEFAULT_FETCH_LIMIT;
+    const rows = await this.prisma.productItem.findMany({
+      where: hasId ? { id: query.id } : { productCollectionId: query.productCollectionId },
+      include: {
+        productBrand: true,
+        productMeasure: true,
+      },
+      orderBy: hasId ? UPDATED_AT_ORDER : [{ sku: 'asc' }, { id: 'asc' }],
+      take: fetchLimit + 1,
+    });
+
+    return this.buildFetchResponse(rows, fetchLimit);
   }
+
+  async fetchProductBarcodes(query: ProductBarcodesFetchQuery): Promise<SyncPullResponse> {
+    if (!query.code && query.productItemId === undefined) {
+      throw new BadRequestException('Provide code or productItemId');
+    }
+
+    const fetchLimit = normalizeLimit(query.limit) ?? DEFAULT_FETCH_LIMIT;
+    const rows = await this.prisma.productBarcode.findMany({
+      where: {
+        ...(query.code ? { code: query.code } : {}),
+        ...(query.productItemId !== undefined ? { productItemId: query.productItemId } : {}),
+      },
+      orderBy: UPDATED_AT_ORDER,
+      take: fetchLimit + 1,
+    });
+
+    return this.buildFetchResponse(rows, fetchLimit);
+  }
+
+  async fetchProductShipments(query: ProductShipmentsFetchQuery): Promise<SyncPullResponse> {
+    const fetchLimit = normalizeLimit(query.limit) ?? DEFAULT_FETCH_LIMIT;
+    const rows = await this.prisma.productShipment.findMany({
+      where: {
+        warehouseId: query.warehouseId,
+        ...(query.productItemId !== undefined ? { productItemId: query.productItemId } : {}),
+      },
+      orderBy: UPDATED_AT_ORDER,
+      take: fetchLimit + 1,
+    });
+
+    return this.buildFetchResponse(rows, fetchLimit);
+  }
+
+  async fetchProductItemStats(query: ProductItemStatsFetchQuery): Promise<SyncPullResponse> {
+    const fetchLimit = normalizeLimit(query.limit) ?? DEFAULT_FETCH_LIMIT;
+    const cursor = parseSyncCursor(query.cursor);
+    const rows = await this.prisma.productItemStats.findMany({
+      where: {
+        warehouseId: query.warehouseId,
+        ...(query.productCollectionId === undefined
+          ? {}
+          : { productItem: { productCollectionId: query.productCollectionId } }),
+        ...updatedAfterWhere(cursor),
+      },
+      orderBy: UPDATED_AT_ORDER,
+      take: fetchLimit + 1,
+    });
+
+    return this.buildFetchResponse(rows, fetchLimit, cursor);
+  }
+
+  private buildFetchResponse(
+    rows: unknown[],
+    limit: number,
+    cursor?: SyncCursorPosition,
+  ): SyncPullResponse {
+    const hasMore = rows.length > limit;
+    const pageRows = hasMore ? rows.slice(0, limit) : rows;
+    const items = serializeSyncItems(pageRows);
+
+    return {
+      items,
+      cursor: cursorFromItems(items) ?? (cursor ? encodeSyncCursor(cursor) : null),
+      hasMore,
+    };
+  }
+}
+
+export function parseSyncLimit(raw?: string | number | null): number | undefined {
+  if (raw === undefined || raw === null || raw === '') return undefined;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new BadRequestException('limit must be a positive integer');
+  }
+  return normalizeLimit(value);
+}
+
+function normalizeLimit(limit?: number): number | undefined {
+  if (limit === undefined) return undefined;
+  return Math.min(limit, MAX_LIMIT);
+}
+
+const UPDATED_AT_ORDER = [{ updatedAt: 'asc' as const }, { id: 'asc' as const }];
+
+export function parseOptionalPositiveInt(
+  raw: string | number | undefined | null,
+  field: string,
+): number | undefined {
+  if (raw === undefined || raw === null || raw === '') return undefined;
+  return parseRequiredPositiveInt(raw, field);
+}
+
+export function parseRequiredPositiveInt(
+  raw: string | number | undefined | null,
+  field: string,
+): number {
+  if (raw === undefined || raw === null || raw === '') {
+    throw new BadRequestException(`${field} is required`);
+  }
+
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new BadRequestException(`${field} must be a positive integer`);
+  }
+  return value;
+}
+
+export function parseOptionalNullablePositiveInt(
+  raw: string | number | undefined | null,
+  field: string,
+): number | null | undefined {
+  if (raw === undefined || raw === '') return undefined;
+  if (raw === null || raw === 'null') return null;
+  return parseRequiredPositiveInt(raw, field);
 }
