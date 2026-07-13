@@ -334,6 +334,7 @@ model ProductShipment {
   arrivalDate   DateTime     @map("arrival_date")
   expiryDate    DateTime?    @map("expiry_date") @db.Date
   quantity      Decimal      @default(0) @db.Decimal(12, 3)
+  /// Purchase price in the currency's ISO 4217 minor units.
   priceAmount   BigInt       @default(0) @map("price_amount")
   currency      CurrencyCode @default(RUB)
   updatedAt     DateTime     @updatedAt @map("updated_at")
@@ -365,10 +366,10 @@ model PriceListAssignment {
   priceListId Int                 @map("price_list_id")
   targetType  PriceListTargetType @map("target_type")
 
-  warehouseId    Int? @map("warehouse_id")
-  organizationId Int? @map("organization_id")
-  localityId     Int? @map("locality_id")
-  countryId      Int? @map("country_id")
+  warehouseId    Int? @unique @map("warehouse_id")
+  organizationId Int? @unique @map("organization_id")
+  localityId     Int? @unique @map("locality_id")
+  countryId      Int? @unique @map("country_id")
 
   priceList    PriceList     @relation(fields: [priceListId], references: [id], onDelete: Cascade)
   warehouse    Warehouse?    @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
@@ -376,10 +377,6 @@ model PriceListAssignment {
   locality     Locality?     @relation(fields: [localityId], references: [id], onDelete: Cascade)
   country      Country?      @relation(fields: [countryId], references: [id], onDelete: Cascade)
 
-  @@unique([priceListId, warehouseId])
-  @@unique([priceListId, organizationId])
-  @@unique([priceListId, localityId])
-  @@unique([priceListId, countryId])
   @@index([priceListId])
   @@map("price_list_assignment")
 }
@@ -388,6 +385,7 @@ model ProductPrice {
   id               Int      @id @default(autoincrement())
   priceListId      Int      @map("price_list_id")
   productPackageId Int      @map("product_package_id")
+  /// Retail price in the price list currency's ISO 4217 minor units.
   priceAmount      BigInt   @map("price_amount")
   createdAt        DateTime @default(now()) @map("created_at")
   updatedAt        DateTime @updatedAt @map("updated_at")
