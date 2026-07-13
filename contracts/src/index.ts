@@ -1,4 +1,5 @@
 export * from './common/pagination';
+export * from './common/currency';
 export * from './modules/auth';
 export * from './modules/organization';
 export * from './modules/warehouse';

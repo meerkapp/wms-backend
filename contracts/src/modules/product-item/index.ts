@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { ProductItemModelSchema } from '../../generated/schemas/variants/pure/ProductItem.pure';
 import { ProductBrandSchema } from '../product-brand';
 import { ProductMeasureSchema } from '../product-measure';
-import { CurrencyCodeSchema } from '../../generated/schemas/enums/CurrencyCode.schema';
+import { CurrencyCodeSchema } from '../../common/currency';
 import {
   createSyncChangePayloadSchema,
   createSyncFetchResponseSchema,
