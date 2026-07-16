@@ -7,68 +7,121 @@ import {
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CreatePriceListDto } from './dto/create-price-list.dto';
+import { SetDirectPriceListAssignmentDto } from './dto/set-direct-price-list-assignment.dto';
 import { SetPriceListAssignmentsDto } from './dto/set-price-list-assignments.dto';
 import { UpdatePriceListDto } from './dto/update-price-list.dto';
 import { UpdatePriceListPricesDto } from './dto/update-price-list-prices.dto';
+import { DirectPriceListAssignmentService } from './direct-price-list-assignment.service';
 
 @Injectable()
 export class PriceListService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly directAssignments: DirectPriceListAssignmentService,
+  ) {}
 
   async findAll() {
     const priceLists = await this.prisma.priceList.findMany({
       include: {
         _count: { select: { assignments: true, prices: true } },
+        assignments: {
+          where: { targetType: { in: ['LOCALITY', 'COUNTRY'] } },
+          select: { localityId: true, countryId: true },
+          orderBy: { id: 'asc' },
+        },
       },
       orderBy: { createdAt: 'desc' },
     });
 
-    return priceLists.map(({ _count, ...priceList }) => ({
+    return priceLists.map(({ _count, assignments, ...priceList }) => ({
       ...priceList,
       assignmentCount: _count.assignments,
       priceCount: _count.prices,
+      localityIds: assignments.flatMap(({ localityId }) =>
+        localityId === null ? [] : [localityId],
+      ),
+      countryIds: assignments.flatMap(({ countryId }) => (countryId === null ? [] : [countryId])),
     }));
   }
 
   async create(dto: CreatePriceListDto) {
-    const priceList = await this.prisma.priceList.create({
-      data: {
-        name: dto.name,
-        currency: dto.currency,
-      },
-    });
-    return priceList;
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const priceList = await tx.priceList.create({
+          data: {
+            name: dto.name,
+            currency: dto.currency,
+          },
+        });
+        await this.replaceGeographicAssignments(tx, priceList.id, dto.localityIds, dto.countryIds);
+        return priceList;
+      });
+    } catch (error) {
+      this.rethrowAssignmentConflict(error);
+    }
   }
 
   async update(id: number, dto: UpdatePriceListDto) {
-    const currentPriceList = await this.prisma.priceList.findUnique({
-      where: { id },
-      select: {
-        currency: true,
-        _count: { select: { prices: true } },
-      },
-    });
-
-    if (!currentPriceList) {
-      throw new NotFoundException(`Price list ${id} not found`);
-    }
-
-    const changesCurrency =
-      dto.currency !== undefined && dto.currency !== currentPriceList.currency;
-    if (changesCurrency && currentPriceList._count.prices > 0) {
-      throw new ConflictException(
-        'Cannot change the currency of a price list that contains prices',
-      );
-    }
-
     try {
-      return await this.prisma.priceList.update({ where: { id }, data: dto });
+      return await this.prisma.$transaction(async (tx) => {
+        const currentPriceList = await tx.priceList.findUnique({
+          where: { id },
+          select: {
+            currency: true,
+            _count: { select: { prices: true } },
+          },
+        });
+
+        if (!currentPriceList) {
+          throw new NotFoundException(`Price list ${id} not found`);
+        }
+
+        const changesCurrency =
+          dto.currency !== undefined && dto.currency !== currentPriceList.currency;
+        if (changesCurrency && currentPriceList._count.prices > 0) {
+          throw new ConflictException(
+            'Cannot change the currency of a price list that contains prices',
+          );
+        }
+
+        const { localityIds, countryIds, ...priceListData } = dto;
+        const priceList = await tx.priceList.update({
+          where: { id },
+          data: priceListData,
+        });
+
+        if (localityIds !== undefined && countryIds !== undefined) {
+          await this.replaceGeographicAssignments(tx, id, localityIds, countryIds);
+        }
+
+        return priceList;
+      });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
         throw new NotFoundException(`Price list ${id} not found`);
       }
-      throw error;
+      this.rethrowAssignmentConflict(error);
     }
+  }
+
+  async findWarehouseAssignment(warehouseId: number) {
+    return this.directAssignments.findWarehouse(this.prisma, warehouseId);
+  }
+
+  async setWarehouseAssignment(warehouseId: number, dto: SetDirectPriceListAssignmentDto) {
+    return this.prisma.$transaction((tx) =>
+      this.directAssignments.setWarehouse(tx, warehouseId, dto.priceListId),
+    );
+  }
+
+  async findOrganizationAssignment(organizationId: number) {
+    return this.directAssignments.findOrganization(this.prisma, organizationId);
+  }
+
+  async setOrganizationAssignment(organizationId: number, dto: SetDirectPriceListAssignmentDto) {
+    return this.prisma.$transaction((tx) =>
+      this.directAssignments.setOrganization(tx, organizationId, dto.priceListId),
+    );
   }
 
   async findAssignments(id: number) {
@@ -202,6 +255,102 @@ export class PriceListService {
   private async assertPriceListExists(client: Prisma.TransactionClient, id: number) {
     const priceList = await client.priceList.findUnique({ where: { id }, select: { id: true } });
     if (!priceList) throw new NotFoundException(`Price list ${id} not found`);
+  }
+
+  private async replaceGeographicAssignments(
+    client: Prisma.TransactionClient,
+    priceListId: number,
+    localityIds: number[],
+    countryIds: number[],
+  ) {
+    const [localityCount, countryCount, existingAssignments] = await Promise.all([
+      client.locality.count({ where: { id: { in: localityIds } } }),
+      client.country.count({ where: { id: { in: countryIds } } }),
+      client.priceListAssignment.findMany({
+        where: {
+          priceListId,
+          targetType: { in: ['LOCALITY', 'COUNTRY'] },
+        },
+        select: { id: true, localityId: true, countryId: true },
+      }),
+    ]);
+    if (localityCount !== localityIds.length || countryCount !== countryIds.length) {
+      throw new BadRequestException('One or more geographic assignment targets do not exist');
+    }
+
+    const targetConditions: Prisma.PriceListAssignmentWhereInput[] = [];
+    if (localityIds.length > 0) targetConditions.push({ localityId: { in: localityIds } });
+    if (countryIds.length > 0) targetConditions.push({ countryId: { in: countryIds } });
+
+    if (targetConditions.length > 0) {
+      const conflicts = await client.priceListAssignment.findMany({
+        where: {
+          priceListId: { not: priceListId },
+          OR: targetConditions,
+        },
+        select: {
+          priceListId: true,
+          targetType: true,
+          localityId: true,
+          countryId: true,
+        },
+      });
+      if (conflicts.length > 0) {
+        throw new ConflictException({
+          message: 'One or more geographic targets are assigned to another price list',
+          conflicts,
+        });
+      }
+    }
+
+    const localityIdSet = new Set(localityIds);
+    const countryIdSet = new Set(countryIds);
+    const existingLocalityIds = new Set(
+      existingAssignments.flatMap(({ localityId }) => (localityId === null ? [] : [localityId])),
+    );
+    const existingCountryIds = new Set(
+      existingAssignments.flatMap(({ countryId }) => (countryId === null ? [] : [countryId])),
+    );
+    const removedAssignmentIds = existingAssignments.flatMap((assignment) => {
+      if (assignment.localityId !== null && !localityIdSet.has(assignment.localityId)) {
+        return [assignment.id];
+      }
+      if (assignment.countryId !== null && !countryIdSet.has(assignment.countryId)) {
+        return [assignment.id];
+      }
+      return [];
+    });
+
+    if (removedAssignmentIds.length > 0) {
+      await client.priceListAssignment.deleteMany({
+        where: { id: { in: removedAssignmentIds } },
+      });
+    }
+
+    const assignments: Prisma.PriceListAssignmentCreateManyInput[] = [
+      ...localityIds.flatMap((localityId) =>
+        existingLocalityIds.has(localityId)
+          ? []
+          : [{ priceListId, targetType: 'LOCALITY' as const, localityId }],
+      ),
+      ...countryIds.flatMap((countryId) =>
+        existingCountryIds.has(countryId)
+          ? []
+          : [{ priceListId, targetType: 'COUNTRY' as const, countryId }],
+      ),
+    ];
+    if (assignments.length > 0) {
+      await client.priceListAssignment.createMany({ data: assignments });
+    }
+  }
+
+  private rethrowAssignmentConflict(error: unknown): never {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      throw new ConflictException(
+        'One or more geographic targets are assigned to another price list',
+      );
+    }
+    throw error;
   }
 
   private async assertAssignmentTargetsExist(

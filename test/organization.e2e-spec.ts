@@ -40,6 +40,41 @@ describe('Organization (e2e)', () => {
     });
   });
 
+  describe('POST /api/organization/with-price-list-assignment', () => {
+    it('creates the organization and assignment atomically', async () => {
+      const priceList = await prisma.priceList.create({
+        data: { name: 'Organization price list', currency: 'RUB' },
+      });
+
+      const res = await request(app.getHttpServer())
+        .post('/api/organization/with-price-list-assignment')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ name: 'Atomic organization', priceListId: priceList.id })
+        .expect(201);
+
+      await expect(
+        prisma.priceListAssignment.findUniqueOrThrow({
+          where: { organizationId: res.body.id as number },
+        }),
+      ).resolves.toMatchObject({
+        priceListId: priceList.id,
+        targetType: 'ORGANIZATION',
+      });
+    });
+
+    it('rolls back the organization when the price list does not exist', async () => {
+      await request(app.getHttpServer())
+        .post('/api/organization/with-price-list-assignment')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ name: 'Rolled back organization', priceListId: 999999 })
+        .expect(404);
+
+      await expect(
+        prisma.organization.findFirst({ where: { name: 'Rolled back organization' } }),
+      ).resolves.toBeNull();
+    });
+  });
+
   describe('PATCH /api/organization/:id', () => {
     it('updates an organization', async () => {
       const org = await prisma.organization.create({ data: { name: 'Old Name' } });
@@ -59,6 +94,37 @@ describe('Organization (e2e)', () => {
         .set('Authorization', `Bearer ${accessToken}`)
         .send({ name: 'Ghost' })
         .expect(404);
+    });
+
+    it('rolls back the organization update when assignment update fails', async () => {
+      const priceList = await prisma.priceList.create({
+        data: { name: 'Existing organization price list', currency: 'RUB' },
+      });
+      const organization = await prisma.organization.create({
+        data: { name: 'Organization before failed update' },
+      });
+      await prisma.priceListAssignment.create({
+        data: {
+          priceListId: priceList.id,
+          targetType: 'ORGANIZATION',
+          organizationId: organization.id,
+        },
+      });
+
+      await request(app.getHttpServer())
+        .patch(`/api/organization/${organization.id}/with-price-list-assignment`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ name: 'Organization after failed update', priceListId: 999999 })
+        .expect(404);
+
+      await expect(
+        prisma.organization.findUniqueOrThrow({ where: { id: organization.id } }),
+      ).resolves.toMatchObject({ name: 'Organization before failed update' });
+      await expect(
+        prisma.priceListAssignment.findUniqueOrThrow({
+          where: { organizationId: organization.id },
+        }),
+      ).resolves.toMatchObject({ priceListId: priceList.id });
     });
   });
 });

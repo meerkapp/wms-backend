@@ -314,6 +314,299 @@ describe('PriceList (e2e)', () => {
     });
   });
 
+  describe('geographic price list scope', () => {
+    let firstPriceListId: number;
+    let secondPriceListId: number;
+    let countryId: number;
+    let localityId: number;
+    let organizationId: number;
+    let warehouseId: number;
+
+    beforeAll(async () => {
+      const suffix = Date.now();
+      const country = await prisma.country.upsert({
+        where: { code: 'FJ' },
+        update: {},
+        create: { code: 'FJ' },
+      });
+      const locality = await prisma.locality.create({
+        data: { name: `Geographic locality ${suffix}`, countryId: country.id },
+      });
+      const organization = await prisma.organization.create({
+        data: { name: `Geographic organization ${suffix}` },
+      });
+      const warehouse = await prisma.warehouse.create({
+        data: {
+          address: `Geographic warehouse ${suffix}`,
+          code: `GEO-${suffix}`,
+          localityId: locality.id,
+          organizationId: organization.id,
+        },
+      });
+      const [firstPriceList, secondPriceList] = await Promise.all([
+        prisma.priceList.create({ data: { name: `Geographic one ${suffix}`, currency: 'EUR' } }),
+        prisma.priceList.create({ data: { name: `Geographic two ${suffix}`, currency: 'EUR' } }),
+      ]);
+      await prisma.priceListAssignment.createMany({
+        data: [
+          {
+            priceListId: firstPriceList.id,
+            targetType: 'ORGANIZATION',
+            organizationId: organization.id,
+          },
+          {
+            priceListId: firstPriceList.id,
+            targetType: 'WAREHOUSE',
+            warehouseId: warehouse.id,
+          },
+        ],
+      });
+
+      firstPriceListId = firstPriceList.id;
+      secondPriceListId = secondPriceList.id;
+      countryId = country.id;
+      localityId = locality.id;
+      organizationId = organization.id;
+      warehouseId = warehouse.id;
+    });
+
+    it('creates a price list with geographic assignments atomically', async () => {
+      const country = await prisma.country.upsert({
+        where: { code: 'TO' },
+        update: {},
+        create: { code: 'TO' },
+      });
+      const locality = await prisma.locality.create({
+        data: { name: `Create geographic locality ${Date.now()}`, countryId: country.id },
+      });
+
+      const response = await request(app.getHttpServer())
+        .post('/api/price-list')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          name: `Created with geography ${Date.now()}`,
+          currency: 'EUR',
+          localityIds: [locality.id],
+          countryIds: [country.id],
+        })
+        .expect(201);
+
+      await expect(
+        prisma.priceListAssignment.findMany({ where: { priceListId: response.body.id } }),
+      ).resolves.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ localityId: locality.id, targetType: 'LOCALITY' }),
+          expect.objectContaining({ countryId: country.id, targetType: 'COUNTRY' }),
+        ]),
+      );
+    });
+
+    it('updates geography without removing organization and warehouse assignments', async () => {
+      await request(app.getHttpServer())
+        .patch(`/api/price-list/${firstPriceListId}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ localityIds: [localityId], countryIds: [countryId] })
+        .expect(200);
+
+      const assignments = await prisma.priceListAssignment.findMany({
+        where: { priceListId: firstPriceListId },
+      });
+      expect(assignments).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ organizationId, targetType: 'ORGANIZATION' }),
+          expect.objectContaining({ warehouseId, targetType: 'WAREHOUSE' }),
+          expect.objectContaining({ localityId, targetType: 'LOCALITY' }),
+          expect.objectContaining({ countryId, targetType: 'COUNTRY' }),
+        ]),
+      );
+
+      const geographicAssignmentIds = assignments
+        .filter(({ targetType }) => targetType === 'LOCALITY' || targetType === 'COUNTRY')
+        .map(({ id }) => id)
+        .sort((a, b) => a - b);
+      await request(app.getHttpServer())
+        .patch(`/api/price-list/${firstPriceListId}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ localityIds: [localityId], countryIds: [countryId] })
+        .expect(200);
+      const unchangedAssignments = await prisma.priceListAssignment.findMany({
+        where: {
+          priceListId: firstPriceListId,
+          targetType: { in: ['LOCALITY', 'COUNTRY'] },
+        },
+        select: { id: true },
+      });
+      expect(unchangedAssignments.map(({ id }) => id).sort((a, b) => a - b)).toEqual(
+        geographicAssignmentIds,
+      );
+
+      const response = await request(app.getHttpServer())
+        .get('/api/price-list')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+      expect(response.body).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: firstPriceListId,
+            localityIds: [localityId],
+            countryIds: [countryId],
+          }),
+        ]),
+      );
+    });
+
+    it('rejects geographic targets owned by another price list', async () => {
+      const response = await request(app.getHttpServer())
+        .patch(`/api/price-list/${secondPriceListId}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ localityIds: [localityId], countryIds: [] })
+        .expect(409);
+
+      expect(response.body.message).toBe(
+        'One or more geographic targets are assigned to another price list',
+      );
+    });
+
+    it('validates geographic assignment pairs, duplicates and unknown ids', async () => {
+      await request(app.getHttpServer())
+        .patch(`/api/price-list/${secondPriceListId}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ localityIds: [] })
+        .expect(400);
+
+      await request(app.getHttpServer())
+        .patch(`/api/price-list/${secondPriceListId}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ localityIds: [], countryIds: [countryId, countryId] })
+        .expect(400);
+
+      await request(app.getHttpServer())
+        .patch(`/api/price-list/${secondPriceListId}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ localityIds: [999999], countryIds: [] })
+        .expect(400);
+    });
+  });
+
+  describe('direct organization and warehouse assignments', () => {
+    let firstPriceListId: number;
+    let secondPriceListId: number;
+    let organizationId: number;
+    let warehouseId: number;
+
+    beforeAll(async () => {
+      const suffix = Date.now();
+      const country = await prisma.country.findUniqueOrThrow({ where: { code: 'AU' } });
+      const locality = await prisma.locality.create({
+        data: { name: `Direct assignment locality ${suffix}`, countryId: country.id },
+      });
+      const organization = await prisma.organization.create({
+        data: { name: `Direct assignment organization ${suffix}` },
+      });
+      const warehouse = await prisma.warehouse.create({
+        data: {
+          address: `Direct assignment warehouse ${suffix}`,
+          code: `DIRECT-${suffix}`,
+          localityId: locality.id,
+          organizationId: organization.id,
+        },
+      });
+      const [firstPriceList, secondPriceList] = await Promise.all([
+        prisma.priceList.create({ data: { name: `Direct one ${suffix}`, currency: 'EUR' } }),
+        prisma.priceList.create({ data: { name: `Direct two ${suffix}`, currency: 'EUR' } }),
+      ]);
+
+      firstPriceListId = firstPriceList.id;
+      secondPriceListId = secondPriceList.id;
+      organizationId = organization.id;
+      warehouseId = warehouse.id;
+    });
+
+    it('requires authentication and update permission', async () => {
+      await request(app.getHttpServer())
+        .get(`/api/price-list/assignments/warehouse/${warehouseId}`)
+        .expect(401);
+
+      await request(app.getHttpServer())
+        .put(`/api/price-list/assignments/warehouse/${warehouseId}`)
+        .set('Authorization', `Bearer ${noPermToken}`)
+        .send({ priceListId: firstPriceListId })
+        .expect(403);
+    });
+
+    it('assigns, replaces and removes a warehouse direct price list', async () => {
+      await request(app.getHttpServer())
+        .get(`/api/price-list/assignments/warehouse/${warehouseId}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200, { priceListId: null });
+
+      await request(app.getHttpServer())
+        .put(`/api/price-list/assignments/warehouse/${warehouseId}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ priceListId: firstPriceListId })
+        .expect(200)
+        .expect(({ body }) => {
+          expect(body).toEqual({ priceListId: firstPriceListId });
+        });
+
+      await request(app.getHttpServer())
+        .put(`/api/price-list/assignments/warehouse/${warehouseId}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ priceListId: secondPriceListId })
+        .expect(200)
+        .expect(({ body }) => expect(body.priceListId).toBe(secondPriceListId));
+
+      await request(app.getHttpServer())
+        .put(`/api/price-list/assignments/warehouse/${warehouseId}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ priceListId: null })
+        .expect(200, { priceListId: null });
+    });
+
+    it('assigns and removes an organization direct price list', async () => {
+      await request(app.getHttpServer())
+        .put(`/api/price-list/assignments/organization/${organizationId}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ priceListId: firstPriceListId })
+        .expect(200)
+        .expect(({ body }) => {
+          expect(body).toEqual({ priceListId: firstPriceListId });
+        });
+
+      await request(app.getHttpServer())
+        .get(`/api/price-list/assignments/organization/${organizationId}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200)
+        .expect(({ body }) => expect(body.priceListId).toBe(firstPriceListId));
+
+      await request(app.getHttpServer())
+        .put(`/api/price-list/assignments/organization/${organizationId}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ priceListId: null })
+        .expect(200, { priceListId: null });
+    });
+
+    it('returns 404 for unknown targets or price lists', async () => {
+      await request(app.getHttpServer())
+        .put('/api/price-list/assignments/warehouse/999999')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ priceListId: firstPriceListId })
+        .expect(404);
+
+      await request(app.getHttpServer())
+        .put(`/api/price-list/assignments/organization/${organizationId}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ priceListId: 999999 })
+        .expect(404);
+
+      await request(app.getHttpServer())
+        .put(`/api/price-list/assignments/organization/${organizationId}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ priceListId: 'invalid' })
+        .expect(400);
+    });
+  });
+
   describe('product prices', () => {
     let priceListId: number;
     let firstPackageId: number;

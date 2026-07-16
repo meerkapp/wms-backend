@@ -14,6 +14,7 @@ import { RequirePermissions } from '../../common/decorators/require-permissions.
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { CreatePriceListDto } from './dto/create-price-list.dto';
+import { SetDirectPriceListAssignmentDto } from './dto/set-direct-price-list-assignment.dto';
 import { SetPriceListAssignmentsDto } from './dto/set-price-list-assignments.dto';
 import { UpdatePriceListDto } from './dto/update-price-list.dto';
 import { UpdatePriceListPricesDto } from './dto/update-price-list-prices.dto';
@@ -44,6 +45,38 @@ export class PriceListController {
   @Patch(':id')
   update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdatePriceListDto) {
     return this.priceListService.update(id, dto);
+  }
+
+  @ApiOperation({ summary: 'Get the direct price list assignment for a warehouse' })
+  @Get('assignments/warehouse/:warehouseId')
+  findWarehouseAssignment(@Param('warehouseId', ParseIntPipe) warehouseId: number) {
+    return this.priceListService.findWarehouseAssignment(warehouseId);
+  }
+
+  @ApiOperation({ summary: 'Set or remove the direct price list assignment for a warehouse' })
+  @RequirePermissions('price_list:update')
+  @Put('assignments/warehouse/:warehouseId')
+  setWarehouseAssignment(
+    @Param('warehouseId', ParseIntPipe) warehouseId: number,
+    @Body() dto: SetDirectPriceListAssignmentDto,
+  ) {
+    return this.priceListService.setWarehouseAssignment(warehouseId, dto);
+  }
+
+  @ApiOperation({ summary: 'Get the direct price list assignment for an organization' })
+  @Get('assignments/organization/:organizationId')
+  findOrganizationAssignment(@Param('organizationId', ParseIntPipe) organizationId: number) {
+    return this.priceListService.findOrganizationAssignment(organizationId);
+  }
+
+  @ApiOperation({ summary: 'Set or remove the direct price list assignment for an organization' })
+  @RequirePermissions('price_list:update')
+  @Put('assignments/organization/:organizationId')
+  setOrganizationAssignment(
+    @Param('organizationId', ParseIntPipe) organizationId: number,
+    @Body() dto: SetDirectPriceListAssignmentDto,
+  ) {
+    return this.priceListService.setOrganizationAssignment(organizationId, dto);
   }
 
   @ApiOperation({ summary: 'Get price list assignments' })
