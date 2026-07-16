@@ -109,6 +109,29 @@ describe('Auth (e2e)', () => {
       await request(app.getHttpServer()).post('/api/auth/refresh').expect(401);
     });
 
+    it('returns 401 when the employee was deactivated after login', async () => {
+      const employee = await prisma.employee.findUniqueOrThrow({
+        where: { email: ADMIN.email },
+      });
+
+      await prisma.employee.update({
+        where: { id: employee.id },
+        data: { isActive: false },
+      });
+
+      try {
+        await request(app.getHttpServer())
+          .post('/api/auth/refresh')
+          .set('Cookie', `refresh_token=${refreshToken}`)
+          .expect(401);
+      } finally {
+        await prisma.employee.update({
+          where: { id: employee.id },
+          data: { isActive: true },
+        });
+      }
+    });
+
     it('launcher mode: accepts token in body and returns both tokens in JSON', async () => {
       // simulate launcher by sending token in body instead of cookie
       const loginRes = await request(app.getHttpServer())

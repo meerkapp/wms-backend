@@ -112,8 +112,8 @@ export class AuthService {
       },
     });
 
-    if (!employee) {
-      throw new UnauthorizedException('Employee not found');
+    if (!employee?.isActive) {
+      throw new UnauthorizedException(employee ? 'Account is inactive' : 'Employee not found');
     }
 
     const permissions = this.extractPermissions(employee);
