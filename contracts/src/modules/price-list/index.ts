@@ -3,12 +3,37 @@ import { CurrencyCodeSchema } from '../../common/currency';
 import { PriceListTargetTypeSchema } from '../../generated/schemas/enums/PriceListTargetType.schema';
 import { PriceListModelSchema } from '../../generated/schemas/variants/pure/PriceList.pure';
 
-export const CreatePriceListSchema = z.object({
+const IdArraySchema = z.array(z.number().int().positive());
+const UniqueIdArraySchema = IdArraySchema.refine((ids) => new Set(ids).size === ids.length, {
+  message: 'Target ids must be unique',
+});
+
+const UniqueIdArraysSchema = z.object({
+  localityIds: UniqueIdArraySchema.default([]),
+  countryIds: UniqueIdArraySchema.default([]),
+});
+
+const PriceListFieldsSchema = z.object({
   name: z.string().min(1),
   currency: CurrencyCodeSchema,
 });
 
-export const UpdatePriceListSchema = CreatePriceListSchema.partial();
+export const CreatePriceListSchema = PriceListFieldsSchema.merge(UniqueIdArraysSchema);
+
+export const UpdatePriceListSchema = PriceListFieldsSchema.partial()
+  .extend({
+    localityIds: UniqueIdArraySchema.optional(),
+    countryIds: UniqueIdArraySchema.optional(),
+  })
+  .superRefine((value, context) => {
+    if ((value.localityIds === undefined) !== (value.countryIds === undefined)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['localityIds'],
+        message: 'localityIds and countryIds must be provided together',
+      });
+    }
+  });
 
 export const PriceListSchema = PriceListModelSchema.omit({
   prices: true,
@@ -21,6 +46,8 @@ export const PriceListSchema = PriceListModelSchema.omit({
 export const PriceListSummarySchema = PriceListSchema.extend({
   assignmentCount: z.number().int().nonnegative(),
   priceCount: z.number().int().nonnegative(),
+  localityIds: IdArraySchema,
+  countryIds: IdArraySchema,
 });
 
 export const PriceListAssignmentSchema = z.object({
@@ -33,26 +60,18 @@ export const PriceListAssignmentSchema = z.object({
   countryId: z.number().int().positive().nullable(),
 });
 
-const IdArraySchema = z.array(z.number().int().positive());
+export const SetPriceListAssignmentsSchema = z.object({
+  warehouseIds: UniqueIdArraySchema,
+  organizationIds: UniqueIdArraySchema,
+  localityIds: UniqueIdArraySchema,
+  countryIds: UniqueIdArraySchema,
+});
 
-export const SetPriceListAssignmentsSchema = z
-  .object({
-    warehouseIds: IdArraySchema,
-    organizationIds: IdArraySchema,
-    localityIds: IdArraySchema,
-    countryIds: IdArraySchema,
-  })
-  .superRefine((value, context) => {
-    for (const [field, ids] of Object.entries(value)) {
-      if (new Set(ids).size !== ids.length) {
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: [field],
-          message: 'Target ids must be unique',
-        });
-      }
-    }
-  });
+export const DirectPriceListAssignmentSchema = z.object({
+  priceListId: z.number().int().positive().nullable(),
+});
+
+export const SetDirectPriceListAssignmentSchema = DirectPriceListAssignmentSchema;
 
 export const ProductPriceSchema = z.object({
   id: z.number().int().positive(),
@@ -108,6 +127,8 @@ export type PriceList = z.infer<typeof PriceListSchema>;
 export type PriceListSummary = z.infer<typeof PriceListSummarySchema>;
 export type PriceListAssignment = z.infer<typeof PriceListAssignmentSchema>;
 export type SetPriceListAssignmentsDto = z.infer<typeof SetPriceListAssignmentsSchema>;
+export type SetDirectPriceListAssignmentDto = z.infer<typeof SetDirectPriceListAssignmentSchema>;
+export type DirectPriceListAssignment = z.infer<typeof DirectPriceListAssignmentSchema>;
 export type ProductPrice = z.infer<typeof ProductPriceSchema>;
 export type ProductPriceInput = z.infer<typeof ProductPriceInputSchema>;
 export type UpdatePriceListPricesDto = z.infer<typeof UpdatePriceListPricesSchema>;
