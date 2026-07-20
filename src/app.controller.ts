@@ -3,9 +3,9 @@ import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
-const pkg = JSON.parse(
-  readFileSync(join(process.cwd(), 'package.json'), 'utf-8'),
-) as { version: string };
+const pkg = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf-8')) as {
+  version: string;
+};
 
 @ApiTags('app')
 @Controller()
@@ -22,9 +22,20 @@ export class AppController {
   }
 
   @ApiOperation({ summary: 'Health check endpoint' })
-  @ApiResponse({ status: 200, schema: { example: { status: 'ok' } } })
+  @ApiResponse({
+    status: 200,
+    schema: {
+      example: {
+        status: 'ok',
+        version: pkg.version,
+      },
+    },
+  })
   @Get('healthcheck')
   healthcheck() {
-    return { status: 'ok' };
+    return {
+      status: 'ok',
+      version: pkg.version,
+    };
   }
 }
