@@ -131,23 +131,6 @@ describe('Auth (e2e)', () => {
         });
       }
     });
-
-    it('launcher mode: accepts token in body and returns both tokens in JSON', async () => {
-      // simulate launcher by sending token in body instead of cookie
-      const loginRes = await request(app.getHttpServer())
-        .post('/api/auth/login')
-        .send({ email: ADMIN.email, password: ADMIN.password });
-      const cookieToken = extractCookie(loginRes, 'refresh_token')!;
-
-      // Use the token as body (no cookie header)
-      const res = await request(app.getHttpServer())
-        .post('/api/auth/refresh')
-        .send({ refresh_token: cookieToken })
-        .expect(200);
-
-      expect(res.body).toHaveProperty('access_token');
-      expect(res.body).toHaveProperty('refresh_token');
-    });
   });
 
   // -------------------------------------------------------------------------
@@ -178,65 +161,6 @@ describe('Auth (e2e)', () => {
 
     it('returns 401 without access token', async () => {
       await request(app.getHttpServer()).post('/api/auth/logout').expect(401);
-    });
-  });
-
-  // -------------------------------------------------------------------------
-  describe('Launcher flow: POST /api/auth/launcher-code + launcher-token', () => {
-    let accessToken: string;
-
-    beforeAll(async () => {
-      const res = await request(app.getHttpServer())
-        .post('/api/auth/login')
-        .send({ email: ADMIN.email, password: ADMIN.password });
-      accessToken = res.body.access_token as string;
-    });
-
-    it('full flow: generates code and exchanges for token pair', async () => {
-      const codeRes = await request(app.getHttpServer())
-        .post('/api/auth/launcher-code')
-        .set('Authorization', `Bearer ${accessToken}`)
-        .expect(201);
-
-      expect(codeRes.body).toHaveProperty('code');
-      const { code } = codeRes.body as { code: string };
-
-      const tokenRes = await request(app.getHttpServer())
-        .post('/api/auth/launcher-token')
-        .send({ code })
-        .expect(200);
-
-      expect(tokenRes.body).toHaveProperty('access_token');
-      expect(tokenRes.body).toHaveProperty('refresh_token');
-    });
-
-    it('code is one-time: second exchange returns 401', async () => {
-      const codeRes = await request(app.getHttpServer())
-        .post('/api/auth/launcher-code')
-        .set('Authorization', `Bearer ${accessToken}`);
-
-      const { code } = codeRes.body as { code: string };
-
-      await request(app.getHttpServer())
-        .post('/api/auth/launcher-token')
-        .send({ code })
-        .expect(200);
-
-      await request(app.getHttpServer())
-        .post('/api/auth/launcher-token')
-        .send({ code })
-        .expect(401);
-    });
-
-    it('returns 401 when requesting launcher-code without auth', async () => {
-      await request(app.getHttpServer()).post('/api/auth/launcher-code').expect(401);
-    });
-
-    it('returns 401 for unknown or expired code', async () => {
-      await request(app.getHttpServer())
-        .post('/api/auth/launcher-token')
-        .send({ code: 'non-existent-code' })
-        .expect(401);
     });
   });
 });

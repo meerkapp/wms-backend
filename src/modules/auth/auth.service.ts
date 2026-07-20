@@ -120,44 +120,6 @@ export class AuthService {
     return this.issueTokens(employee, permissions);
   }
 
-  async generateLauncherCode(userId: string): Promise<{ code: string }> {
-    const code = uuidv4();
-    await this.redisService.set(`launcher_code:${code}`, userId, 'EX', 30);
-    return { code };
-  }
-
-  async exchangeLauncherCode(code: string): Promise<TokenPair> {
-    const userId = await this.redisService.get(`launcher_code:${code}`);
-    if (!userId) {
-      throw new UnauthorizedException('Code expired or already used');
-    }
-    await this.redisService.del(`launcher_code:${code}`);
-
-    const employee = await this.prisma.employee.findUnique({
-      where: { id: userId },
-      include: {
-        roleAssignments: {
-          include: {
-            employeeRole: {
-              include: {
-                permissions: {
-                  include: { employeePermission: true },
-                },
-              },
-            },
-          },
-        },
-      },
-    });
-
-    if (!employee?.isActive) {
-      throw new UnauthorizedException('Account is inactive');
-    }
-
-    const permissions = this.extractPermissions(employee);
-    return this.issueTokens(employee, permissions);
-  }
-
   async logout(refreshToken: string): Promise<void> {
     // token may be expired, decode without verification
     const payload = this.jwtService.decode(refreshToken) as {

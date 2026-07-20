@@ -17,7 +17,6 @@ export class AppController {
     return {
       name: 'Meerk WMS',
       version: pkg.version,
-      min_launcher_version: '1.0.0',
     };
   }
 
