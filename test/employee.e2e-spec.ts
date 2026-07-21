@@ -12,10 +12,10 @@ const TINY_PNG = Buffer.from(
   'base64',
 );
 
-const MOCK_AVATAR_URL = 'http://minio:9000/test-bucket/avatars/test.png';
+const avatarUrlForKey = (key: string) => `http://minio:9000/test-bucket/${key}`;
 
 const mockStorage = {
-  upload: jest.fn().mockResolvedValue(MOCK_AVATAR_URL),
+  upload: jest.fn((key: string) => Promise.resolve(avatarUrlForKey(key))),
   delete: jest.fn().mockResolvedValue(undefined),
   bucket: 'test-bucket',
 };
@@ -24,6 +24,7 @@ describe('Employee (e2e)', () => {
   let app: INestApplication<App>;
   let prisma: PrismaService;
   let adminToken: string;
+  let adminEmployeeId: string;
   let targetEmployeeId: string;
 
   let counter = 0;
@@ -84,6 +85,12 @@ describe('Employee (e2e)', () => {
     prisma = app.get(PrismaService);
     await cleanDatabase(prisma);
     ({ access_token: adminToken } = await seedAdmin(app));
+    adminEmployeeId = (
+      await prisma.employee.findUniqueOrThrow({
+        where: { email: ADMIN.email },
+        select: { id: true },
+      })
+    ).id;
 
     // Shared target employee used across multiple test groups
     const emp = await prisma.employee.create({
@@ -104,7 +111,7 @@ describe('Employee (e2e)', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockStorage.upload.mockResolvedValue(MOCK_AVATAR_URL);
+    mockStorage.upload.mockImplementation((key: string) => Promise.resolve(avatarUrlForKey(key)));
   });
 
   // ---------------------------------------------------------------------------
@@ -193,6 +200,25 @@ describe('Employee (e2e)', () => {
         .send({ email: ADMIN.email, password: 'Test1234!', firstName: 'Dup', lastName: 'User' })
         .expect(409);
     });
+
+    it('does not let a non-superadmin assign the protected role', async () => {
+      const token = await tokenFor(['employee:create']);
+      const superadminRole = await prisma.employeeRole.findUniqueOrThrow({
+        where: { name: 'superadmin' },
+      });
+
+      await request(app.getHttpServer())
+        .post('/api/employee')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          email: uniqueEmail('protected-role'),
+          password: 'Test1234!',
+          firstName: 'Protected',
+          lastName: 'Attempt',
+          roleIds: [superadminRole.id],
+        })
+        .expect(403);
+    });
   });
 
   // ---------------------------------------------------------------------------
@@ -217,9 +243,7 @@ describe('Employee (e2e)', () => {
   // ---------------------------------------------------------------------------
   describe('GET /api/employee/:id', () => {
     it('returns 401 without token', async () => {
-      await request(app.getHttpServer())
-        .get(`/api/employee/${targetEmployeeId}`)
-        .expect(401);
+      await request(app.getHttpServer()).get(`/api/employee/${targetEmployeeId}`).expect(401);
     });
 
     it('returns employee by id', async () => {
@@ -380,6 +404,19 @@ describe('Employee (e2e)', () => {
         .expect(400);
     });
 
+    it('returns 400 when the declared image type does not match the file content', async () => {
+      await request(app.getHttpServer())
+        .post('/api/employee/me/avatar')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .attach('file', Buffer.from('not an image'), {
+          filename: 'spoofed.png',
+          contentType: 'image/png',
+        })
+        .expect(400);
+
+      expect(mockStorage.upload).not.toHaveBeenCalled();
+    });
+
     it('uploads avatar and returns avatarUrl', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/employee/me/avatar')
@@ -387,10 +424,12 @@ describe('Employee (e2e)', () => {
         .attach('file', TINY_PNG, { filename: 'avatar.png', contentType: 'image/png' })
         .expect(201);
 
-      expect(res.body).toMatchObject({ avatarUrl: MOCK_AVATAR_URL });
+      expect(res.body.avatarUrl).toEqual(
+        expect.stringMatching(/^http:\/\/minio:9000\/test-bucket\/avatars\/.+\/[^/]+\.png$/),
+      );
       expect(mockStorage.upload).toHaveBeenCalledTimes(1);
       const [[key]] = mockStorage.upload.mock.calls;
-      expect(key).toMatch(/^avatars\/.+\.png$/);
+      expect(key).toMatch(/^avatars\/.+\/[^/]+\.png$/);
     });
   });
 
@@ -456,6 +495,15 @@ describe('Employee (e2e)', () => {
         .expect(403);
     });
 
+    it('does not let a non-superadmin change a protected account', async () => {
+      const token = await tokenFor(['employee:update:password']);
+      await request(app.getHttpServer())
+        .patch(`/api/employee/${adminEmployeeId}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ newPassword: 'Compromised123!' })
+        .expect(403);
+    });
+
     it('syncs roles atomically when roleIds provided', async () => {
       const role = await prisma.employeeRole.create({
         data: { name: `synced-role-${Date.now()}`, color: '#ff0000' },
@@ -479,6 +527,19 @@ describe('Employee (e2e)', () => {
         .expect(200);
 
       expect(res.body.roleAssignments).toHaveLength(0);
+    });
+
+    it('does not let a non-superadmin assign the protected role', async () => {
+      const token = await tokenFor(['employee:update:roles']);
+      const superadminRole = await prisma.employeeRole.findUniqueOrThrow({
+        where: { name: 'superadmin' },
+      });
+
+      await request(app.getHttpServer())
+        .patch(`/api/employee/${targetEmployeeId}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ roleIds: [superadminRole.id] })
+        .expect(403);
     });
 
     it('toggles isActive to false', async () => {
@@ -526,6 +587,24 @@ describe('Employee (e2e)', () => {
         .expect(403);
     });
 
+    it('does not accept the own-avatar permission for another employee', async () => {
+      const token = await tokenFor(['employee:update:own:avatar']);
+      await request(app.getHttpServer())
+        .post(`/api/employee/${targetEmployeeId}/avatar`)
+        .set('Authorization', `Bearer ${token}`)
+        .attach('file', TINY_PNG, { filename: 'avatar.png', contentType: 'image/png' })
+        .expect(403);
+    });
+
+    it('does not let a non-superadmin change a protected account avatar', async () => {
+      const token = await tokenFor(['employee:update:avatar']);
+      await request(app.getHttpServer())
+        .post(`/api/employee/${adminEmployeeId}/avatar`)
+        .set('Authorization', `Bearer ${token}`)
+        .attach('file', TINY_PNG, { filename: 'avatar.png', contentType: 'image/png' })
+        .expect(403);
+    });
+
     it('returns 400 when no file is provided', async () => {
       await request(app.getHttpServer())
         .post(`/api/employee/${targetEmployeeId}/avatar`)
@@ -534,14 +613,29 @@ describe('Employee (e2e)', () => {
     });
 
     it('uploads avatar for employee and returns avatarUrl', async () => {
+      const oldKey = `avatars/${targetEmployeeId}/old.png`;
+      await prisma.employee.update({
+        where: { id: targetEmployeeId },
+        data: { avatarUrl: avatarUrlForKey(oldKey) },
+      });
+
       const res = await request(app.getHttpServer())
         .post(`/api/employee/${targetEmployeeId}/avatar`)
         .set('Authorization', `Bearer ${adminToken}`)
         .attach('file', TINY_PNG, { filename: 'avatar.png', contentType: 'image/png' })
         .expect(201);
 
-      expect(res.body).toMatchObject({ avatarUrl: MOCK_AVATAR_URL });
+      expect(res.body.avatarUrl).toEqual(
+        expect.stringMatching(/^http:\/\/minio:9000\/test-bucket\/avatars\/.+\/[^/]+\.png$/),
+      );
       expect(mockStorage.upload).toHaveBeenCalledTimes(1);
+      const [[newKey]] = mockStorage.upload.mock.calls;
+      expect(newKey).toMatch(new RegExp(`^avatars/${targetEmployeeId}/[^/]+\\.png$`));
+      expect(newKey).not.toBe(oldKey);
+      expect(mockStorage.delete).toHaveBeenCalledWith(oldKey);
+      expect(mockStorage.upload.mock.invocationCallOrder[0]).toBeLessThan(
+        mockStorage.delete.mock.invocationCallOrder[0]!,
+      );
     });
   });
 

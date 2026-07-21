@@ -54,8 +54,8 @@ export class EmployeeController {
   @ApiOperation({ summary: 'Create an employee' })
   @RequirePermissions('employee:create')
   @Post()
-  create(@Body() dto: CreateEmployeeDto) {
-    return this.employeeService.create(dto);
+  create(@Body() dto: CreateEmployeeDto, @CurrentUser() user: JwtPayload) {
+    return this.employeeService.create(dto, user.sub);
   }
 
   @ApiOperation({ summary: 'Get all employees' })
@@ -72,14 +72,13 @@ export class EmployeeController {
 
   @ApiOperation({ summary: 'Upload own avatar' })
   @ApiConsumes('multipart/form-data')
-  @ApiBody({ schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } } } })
+  @ApiBody({
+    schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } } },
+  })
   @RequirePermissions('employee:update:own:avatar')
   @Post('me/avatar')
   @UseInterceptors(AVATAR_INTERCEPTOR)
-  uploadOwnAvatar(
-    @CurrentUser() user: JwtPayload,
-    @UploadedFile() file: Express.Multer.File,
-  ) {
+  uploadOwnAvatar(@CurrentUser() user: JwtPayload, @UploadedFile() file: Express.Multer.File) {
     if (!file) throw new BadRequestException('File is required');
     return this.employeeService.uploadAvatar(user.sub, file);
   }
@@ -92,25 +91,16 @@ export class EmployeeController {
   }
 
   @ApiOperation({ summary: 'Update own profile' })
-  @RequirePermissions(
-    'employee:update:own:info',
-    'employee:update:own:email',
-  )
+  @RequirePermissions('employee:update:own:info', 'employee:update:own:email')
   @Patch('me')
-  updateOwnProfile(
-    @CurrentUser() user: JwtPayload,
-    @Body() dto: UpdateOwnProfileDto,
-  ) {
+  updateOwnProfile(@CurrentUser() user: JwtPayload, @Body() dto: UpdateOwnProfileDto) {
     return this.employeeService.updateOwnProfile(user.sub, dto, user.permissions);
   }
 
   @ApiOperation({ summary: 'Update own password' })
   @RequirePermissions('employee:update:own:password')
   @Patch('me/password')
-  updateOwnPassword(
-    @CurrentUser() user: JwtPayload,
-    @Body() dto: UpdateOwnPasswordDto,
-  ) {
+  updateOwnPassword(@CurrentUser() user: JwtPayload, @Body() dto: UpdateOwnPasswordDto) {
     return this.employeeService.updateOwnPassword(user.sub, dto);
   }
 
@@ -122,23 +112,26 @@ export class EmployeeController {
 
   @ApiOperation({ summary: 'Upload avatar for employee' })
   @ApiConsumes('multipart/form-data')
-  @ApiBody({ schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } } } })
+  @ApiBody({
+    schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } } },
+  })
   @RequirePermissions('employee:update:avatar')
   @Post(':id/avatar')
   @UseInterceptors(AVATAR_INTERCEPTOR)
   uploadAvatar(
     @Param('id', ParseUUIDPipe) id: string,
     @UploadedFile() file: Express.Multer.File,
+    @CurrentUser() user: JwtPayload,
   ) {
     if (!file) throw new BadRequestException('File is required');
-    return this.employeeService.uploadAvatar(id, file);
+    return this.employeeService.uploadAvatar(id, file, user.sub);
   }
 
   @ApiOperation({ summary: 'Delete avatar for employee' })
   @RequirePermissions('employee:update:avatar')
   @Delete(':id/avatar')
-  deleteAvatar(@Param('id', ParseUUIDPipe) id: string) {
-    return this.employeeService.deleteAvatar(id);
+  deleteAvatar(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: JwtPayload) {
+    return this.employeeService.deleteAvatar(id, user.sub);
   }
 
   @ApiOperation({ summary: 'Update employee' })
@@ -156,7 +149,6 @@ export class EmployeeController {
     @Body() dto: UpdateEmployeeDto,
     @CurrentUser() user: JwtPayload,
   ) {
-    return this.employeeService.update(id, dto, user.permissions);
+    return this.employeeService.update(id, dto, user.permissions, user.sub);
   }
-
 }

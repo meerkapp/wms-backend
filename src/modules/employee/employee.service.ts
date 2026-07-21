@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -6,6 +7,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
+import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { StorageService } from '../../common/storage/storage.service';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
@@ -36,6 +38,35 @@ const EMPLOYEE_SELECT = {
   },
 } as const;
 
+const AVATAR_FILE_EXTENSIONS: Record<string, string> = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+};
+
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+function hasValidAvatarSignature(file: Express.Multer.File): boolean {
+  const { buffer, mimetype } = file;
+
+  if (mimetype === 'image/jpeg') {
+    return buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
+  }
+  if (mimetype === 'image/png') {
+    return buffer.length >= PNG_SIGNATURE.length && buffer.subarray(0, 8).equals(PNG_SIGNATURE);
+  }
+  if (mimetype === 'image/webp') {
+    return (
+      buffer.length >= 12 &&
+      buffer.toString('ascii', 0, 4) === 'RIFF' &&
+      buffer.toString('ascii', 8, 12) === 'WEBP'
+    );
+  }
+  return false;
+}
+
+const PROTECTED_ROLE_NAME = 'superadmin';
+
 @Injectable()
 export class EmployeeService {
   constructor(
@@ -43,13 +74,14 @@ export class EmployeeService {
     private readonly storage: StorageService,
   ) {}
 
-  async create(dto: CreateEmployeeDto) {
+  async create(dto: CreateEmployeeDto, actorId: string) {
     const existing = await this.prisma.employee.findUnique({
       where: { email: dto.email },
     });
     if (existing) throw new ConflictException('Email already in use');
 
     const { password, roleIds, ...employeeData } = dto;
+    await this.assertProtectedRoleBoundary(actorId, { roleIds });
     const hashedPassword = await bcrypt.hash(password, 10);
 
     return this.prisma.$transaction(async (tx) => {
@@ -104,11 +136,15 @@ export class EmployeeService {
     return employee;
   }
 
-  async update(id: string, dto: UpdateEmployeeDto, permissions: string[]) {
+  async update(id: string, dto: UpdateEmployeeDto, permissions: string[], actorId: string) {
     const { roleIds, newPassword, email, firstName, lastName, phone, warehouseId, isActive } = dto;
 
-    if ((firstName !== undefined || lastName !== undefined || phone !== undefined) &&
-        !permissions.includes('employee:update:info')) {
+    await this.assertProtectedRoleBoundary(actorId, { targetId: id, roleIds });
+
+    if (
+      (firstName !== undefined || lastName !== undefined || phone !== undefined) &&
+      !permissions.includes('employee:update:info')
+    ) {
       throw new ForbiddenException('No permission to update info');
     }
     if (warehouseId !== undefined && !permissions.includes('employee:update:warehouse')) {
@@ -168,8 +204,10 @@ export class EmployeeService {
   async updateOwnProfile(id: string, dto: UpdateOwnProfileDto, permissions: string[]) {
     const { firstName, lastName, phone, email } = dto;
 
-    if ((firstName !== undefined || lastName !== undefined || phone !== undefined) &&
-        !permissions.includes('employee:update:own:info')) {
+    if (
+      (firstName !== undefined || lastName !== undefined || phone !== undefined) &&
+      !permissions.includes('employee:update:own:info')
+    ) {
       throw new ForbiddenException('No permission to update info');
     }
     if (email !== undefined && !permissions.includes('employee:update:own:email')) {
@@ -215,41 +253,94 @@ export class EmployeeService {
     return { success: true };
   }
 
-  async uploadAvatar(id: string, file: Express.Multer.File): Promise<{ avatarUrl: string }> {
+  async uploadAvatar(
+    id: string,
+    file: Express.Multer.File,
+    actorId?: string,
+  ): Promise<{ avatarUrl: string }> {
+    if (actorId) await this.assertProtectedRoleBoundary(actorId, { targetId: id });
+
     const employee = await this.prisma.employee.findUnique({ where: { id } });
     if (!employee) throw new NotFoundException(`Employee ${id} not found`);
+
+    const extension = AVATAR_FILE_EXTENSIONS[file.mimetype];
+    if (!extension || !hasValidAvatarSignature(file)) {
+      throw new BadRequestException('Unsupported avatar image type');
+    }
+
+    const key = `avatars/${id}/${randomUUID()}.${extension}`;
+    const avatarUrl = await this.storage.upload(key, file.buffer, file.mimetype);
+
+    try {
+      await this.prisma.employee.update({
+        where: { id },
+        data: { avatarUrl },
+      });
+    } catch (error) {
+      await this.storage.delete(key);
+      throw error;
+    }
 
     if (employee.avatarUrl) {
       const oldKey = employee.avatarUrl.split(`/${this.storage.bucket}/`)[1];
       if (oldKey) await this.storage.delete(oldKey);
     }
 
-    const ext = file.originalname.split('.').pop();
-    const key = `avatars/${id}.${ext}`;
-    const avatarUrl = await this.storage.upload(key, file.buffer, file.mimetype);
-
-    await this.prisma.employee.update({
-      where: { id },
-      data: { avatarUrl },
-    });
-
     return { avatarUrl };
   }
 
-  async deleteAvatar(id: string): Promise<{ avatarUrl: null }> {
+  async deleteAvatar(id: string, actorId?: string): Promise<{ avatarUrl: null }> {
+    if (actorId) await this.assertProtectedRoleBoundary(actorId, { targetId: id });
+
     const employee = await this.prisma.employee.findUnique({ where: { id } });
     if (!employee) throw new NotFoundException(`Employee ${id} not found`);
-
-    if (employee.avatarUrl) {
-      const key = employee.avatarUrl.split(`/${this.storage.bucket}/`)[1];
-      if (key) await this.storage.delete(key);
-    }
 
     await this.prisma.employee.update({
       where: { id },
       data: { avatarUrl: null },
     });
 
+    if (employee.avatarUrl) {
+      const key = employee.avatarUrl.split(`/${this.storage.bucket}/`)[1];
+      if (key) await this.storage.delete(key);
+    }
+
     return { avatarUrl: null };
+  }
+
+  private async assertProtectedRoleBoundary(
+    actorId: string,
+    { targetId, roleIds }: { targetId?: string; roleIds?: number[] },
+  ): Promise<void> {
+    const actorHasProtectedRole = await this.prisma.employeeRoleAssignment.findFirst({
+      where: {
+        employeeId: actorId,
+        employeeRole: { name: PROTECTED_ROLE_NAME },
+      },
+      select: { id: true },
+    });
+    if (actorHasProtectedRole) return;
+
+    const [targetHasProtectedRole, assignsProtectedRole] = await Promise.all([
+      targetId
+        ? this.prisma.employeeRoleAssignment.findFirst({
+            where: {
+              employeeId: targetId,
+              employeeRole: { name: PROTECTED_ROLE_NAME },
+            },
+            select: { id: true },
+          })
+        : null,
+      roleIds?.length
+        ? this.prisma.employeeRole.findFirst({
+            where: { id: { in: roleIds }, name: PROTECTED_ROLE_NAME },
+            select: { id: true },
+          })
+        : null,
+    ]);
+
+    if (targetHasProtectedRole || assignsProtectedRole) {
+      throw new ForbiddenException('Only a superadmin can manage protected accounts and roles');
+    }
   }
 }
