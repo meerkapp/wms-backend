@@ -30,8 +30,8 @@ export class SetupController {
     @Body() dto: InitDto,
     @Res({ passthrough: true }) res: Response,
   ): Promise<{ access_token: string }> {
-    const { access_token, refresh_token } = await this.setupService.init(dto);
-    this.authService.setRefreshCookie(res, refresh_token);
+    const { access_token, deviceSessionId } = await this.setupService.init(dto);
+    this.authService.setDeviceSessionCookie(res, deviceSessionId);
     return { access_token };
   }
 }

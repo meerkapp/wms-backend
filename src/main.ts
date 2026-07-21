@@ -15,6 +15,7 @@ import { ConfigService } from '@nestjs/config';
 import { apiReference } from '@scalar/nestjs-api-reference';
 import * as cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
+import { DEVICE_SESSION_COOKIE } from './modules/auth/device-session.service';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -23,8 +24,12 @@ async function bootstrap() {
   app.use(cookieParser());
   app.setGlobalPrefix('api');
   app.useGlobalPipes(new ZodValidationPipe());
+  const frontendOrigin = configService.get<string>('FRONT_END_DOMAIN');
+  if (!frontendOrigin || frontendOrigin === '*') {
+    throw new Error('FRONT_END_DOMAIN must be an explicit origin when credentials are enabled');
+  }
   app.enableCors({
-    origin: configService.get<string>('FRONT_END_DOMAIN'),
+    origin: frontendOrigin,
     credentials: true,
   });
 
@@ -33,7 +38,7 @@ async function bootstrap() {
       .setTitle('Meerk WMS API')
       .setVersion('1.0')
       .addBearerAuth()
-      .addCookieAuth('refresh_token')
+      .addCookieAuth(DEVICE_SESSION_COOKIE)
       .build();
     const document = SwaggerModule.createDocument(app, config);
     const scalarPath = configService.get<string>('SCALAR_PATH') ?? '/docs';

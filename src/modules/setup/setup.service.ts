@@ -1,6 +1,6 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
-import { AuthService, TokenPair } from '../auth/auth.service';
+import { AuthService, AuthSessionResult } from '../auth/auth.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { InitDto } from './dto/init.dto';
 
@@ -18,7 +18,7 @@ export class SetupService {
     return { setupRequired: !settings?.setupCompleted };
   }
 
-  async init(dto: InitDto): Promise<TokenPair> {
+  async init(dto: InitDto): Promise<AuthSessionResult> {
     const settings = await this.prisma.serverSettings.findUnique({
       where: { id: 1 },
     });
@@ -70,7 +70,7 @@ export class SetupService {
       select: { name: true },
     });
 
-    return this.authService.issueTokens(
+    return this.authService.createAuthenticatedSession(
       employee,
       permissions.map((p) => p.name),
     );

@@ -5,11 +5,12 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { PermissionsSyncService } from './permissions-sync.service';
+import { DeviceSessionService } from './device-session.service';
 
 @Module({
   imports: [PassportModule, JwtModule.register({})],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, PermissionsSyncService],
+  providers: [AuthService, DeviceSessionService, JwtStrategy, PermissionsSyncService],
   exports: [AuthService],
 })
 export class AuthModule {}

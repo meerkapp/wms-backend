@@ -21,38 +21,31 @@ describe('Setup (e2e)', () => {
 
   describe('GET /api/setup/status', () => {
     it('returns setupRequired: true before init', async () => {
-      const res = await request(app.getHttpServer())
-        .get('/api/setup/status')
-        .expect(200);
+      const res = await request(app.getHttpServer()).get('/api/setup/status').expect(200);
 
       expect(res.body).toEqual({ setupRequired: true });
     });
   });
 
   describe('POST /api/setup/init', () => {
-    it('creates first admin and returns access_token + refresh cookie', async () => {
+    it('creates first admin and starts a device session', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/setup/init')
         .send(ADMIN)
         .expect(201);
 
       expect(res.body).toHaveProperty('access_token');
-      expect(extractCookie(res, 'refresh_token')).toBeDefined();
+      expect(extractCookie(res, 'device_session')).toBeDefined();
     });
 
     it('returns 403 when setup already done', async () => {
-      await request(app.getHttpServer())
-        .post('/api/setup/init')
-        .send(ADMIN)
-        .expect(403);
+      await request(app.getHttpServer()).post('/api/setup/init').send(ADMIN).expect(403);
     });
   });
 
   describe('GET /api/setup/status', () => {
     it('returns setupRequired: false after init', async () => {
-      const res = await request(app.getHttpServer())
-        .get('/api/setup/status')
-        .expect(200);
+      const res = await request(app.getHttpServer()).get('/api/setup/status').expect(200);
 
       expect(res.body).toEqual({ setupRequired: false });
     });

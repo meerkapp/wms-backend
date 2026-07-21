@@ -1,16 +1,20 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
+import { Prisma } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { Response } from 'express';
-import { v4 as uuidv4 } from 'uuid';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { RedisService } from '../../common/redis/redis.service';
+import {
+  DEVICE_SESSION_COOKIE,
+  DEVICE_SESSION_TTL_MS,
+  DeviceSessionService,
+} from './device-session.service';
 import { LoginDto } from './dto/login.dto';
 import { JwtPayload } from './strategies/jwt.strategy';
 
-const REFRESH_TTL_SECONDS = 60 * 60 * 24 * 30;
-const REFRESH_TTL_MS = REFRESH_TTL_SECONDS * 1000;
+const LEGACY_REFRESH_COOKIE = 'refresh_token';
 
 export interface EmployeeTokenData {
   id: string;
@@ -23,9 +27,17 @@ export interface EmployeeTokenData {
   lastSeen: Date | null;
 }
 
-export interface TokenPair {
+export interface AuthSessionResult {
   access_token: string;
-  refresh_token: string;
+  deviceSessionId: string;
+}
+
+export interface DeviceAccountSummary {
+  accountId: string;
+  firstName: string;
+  lastName: string;
+  avatarUrl: string | null;
+  warehouseId: number | null;
 }
 
 @Injectable()
@@ -35,49 +47,109 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly redisService: RedisService,
     private readonly configService: ConfigService,
+    private readonly deviceSessionService: DeviceSessionService,
   ) {}
 
-  async login(dto: LoginDto): Promise<TokenPair> {
-    const employee = await this.prisma.employee.findUnique({
-      where: { email: dto.email },
-      include: {
-        roleAssignments: {
-          include: {
-            employeeRole: {
-              include: {
-                permissions: {
-                  include: { employeePermission: true },
-                },
-              },
-            },
-          },
-        },
-      },
-    });
+  async login(dto: LoginDto, deviceSessionId?: string): Promise<AuthSessionResult> {
+    const employee = await this.findEmployeeWithPermissions({ email: dto.email });
 
-    if (!employee) {
+    if (!employee) throw new UnauthorizedException('Invalid credentials');
+    if (!(await bcrypt.compare(dto.password, employee.password))) {
       throw new UnauthorizedException('Invalid credentials');
     }
+    if (!employee.isActive) throw new UnauthorizedException('Account is inactive');
 
-    const passwordValid = await bcrypt.compare(dto.password, employee.password);
-    if (!passwordValid) {
-      throw new UnauthorizedException('Invalid credentials');
-    }
-
-    if (!employee.isActive) {
-      throw new UnauthorizedException('Account is inactive');
-    }
-
+    const lastSeen = new Date();
     await this.prisma.employee.update({
       where: { id: employee.id },
-      data: { lastSeen: new Date() },
+      data: { lastSeen },
     });
+    employee.lastSeen = lastSeen;
 
-    const permissions = this.extractPermissions(employee);
-    return this.issueTokens(employee, permissions);
+    return this.createAuthenticatedSession(
+      employee,
+      this.extractPermissions(employee),
+      deviceSessionId,
+    );
   }
 
-  async refresh(refreshToken: string): Promise<TokenPair> {
+  async createAuthenticatedSession(
+    employee: EmployeeTokenData,
+    permissions: string[],
+    deviceSessionId?: string,
+  ): Promise<AuthSessionResult> {
+    const resolvedSessionId = await this.deviceSessionService.rotateAndAddAccount(
+      deviceSessionId,
+      employee.id,
+    );
+    return {
+      access_token: this.issueAccessToken(employee, permissions),
+      deviceSessionId: resolvedSessionId,
+    };
+  }
+
+  async activateAccount(deviceSessionId: string, accountId: string): Promise<AuthSessionResult> {
+    if (!(await this.deviceSessionService.hasAccount(deviceSessionId, accountId))) {
+      throw new UnauthorizedException('Account is not authorized on this device');
+    }
+
+    const employee = await this.findEmployeeWithPermissions({ id: accountId });
+    if (!employee?.isActive) {
+      await this.deviceSessionService.removeAccount(deviceSessionId, accountId);
+      throw new UnauthorizedException(employee ? 'Account is inactive' : 'Employee not found');
+    }
+
+    if (!(await this.deviceSessionService.touchAccount(deviceSessionId, accountId))) {
+      throw new UnauthorizedException('Account is no longer authorized on this device');
+    }
+    return {
+      access_token: this.issueAccessToken(employee, this.extractPermissions(employee)),
+      deviceSessionId,
+    };
+  }
+
+  async listDeviceAccounts(deviceSessionId: string): Promise<DeviceAccountSummary[]> {
+    const accountIds = await this.deviceSessionService.listAccountIds(deviceSessionId);
+    if (accountIds.length === 0) return [];
+
+    const employees = await this.prisma.employee.findMany({
+      where: { id: { in: accountIds }, isActive: true },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        avatarUrl: true,
+        warehouseId: true,
+      },
+    });
+    const activeIds = new Set(employees.map((employee) => employee.id));
+    await Promise.all(
+      accountIds
+        .filter((accountId) => !activeIds.has(accountId))
+        .map((accountId) => this.deviceSessionService.removeAccount(deviceSessionId, accountId)),
+    );
+
+    return employees
+      .map((employee) => ({
+        accountId: employee.id,
+        firstName: employee.firstName,
+        lastName: employee.lastName,
+        avatarUrl: employee.avatarUrl,
+        warehouseId: employee.warehouseId,
+      }))
+      .sort((left, right) =>
+        `${left.lastName} ${left.firstName}`.localeCompare(`${right.lastName} ${right.firstName}`),
+      );
+  }
+
+  removeDeviceAccount(deviceSessionId: string, accountId: string): Promise<number> {
+    return this.deviceSessionService.removeAccount(deviceSessionId, accountId);
+  }
+
+  async migrateLegacyRefreshToken(
+    refreshToken: string,
+    requestedAccountId: string,
+  ): Promise<AuthSessionResult> {
     let payload: { sub: string; jti: string };
     try {
       payload = this.jwtService.verify<{ sub: string; jti: string }>(refreshToken, {
@@ -87,58 +159,58 @@ export class AuthService {
       throw new UnauthorizedException('Invalid refresh token');
     }
 
+    if (payload.sub !== requestedAccountId) {
+      throw new UnauthorizedException('Refresh token belongs to another account');
+    }
+
     const key = `refresh:${payload.sub}:${payload.jti}`;
-    const exists = await this.redisService.exists(key);
-    if (!exists) {
+    if ((await this.redisService.del(key)) !== 1) {
       throw new UnauthorizedException('Refresh token expired or already used');
     }
 
-    await this.redisService.del(key);
-
-    const employee = await this.prisma.employee.findUnique({
-      where: { id: payload.sub },
-      include: {
-        roleAssignments: {
-          include: {
-            employeeRole: {
-              include: {
-                permissions: {
-                  include: { employeePermission: true },
-                },
-              },
-            },
-          },
-        },
-      },
-    });
-
+    const employee = await this.findEmployeeWithPermissions({ id: payload.sub });
     if (!employee?.isActive) {
       throw new UnauthorizedException(employee ? 'Account is inactive' : 'Employee not found');
     }
 
-    const permissions = this.extractPermissions(employee);
-    return this.issueTokens(employee, permissions);
+    return this.createAuthenticatedSession(employee, this.extractPermissions(employee));
   }
 
-  async logout(refreshToken: string): Promise<void> {
-    // token may be expired, decode without verification
-    const payload = this.jwtService.decode(refreshToken) as {
-      sub?: string;
-      jti?: string;
-    } | null;
+  async revokeLegacyRefreshToken(refreshToken: string): Promise<void> {
+    let payload: { sub?: string; jti?: string };
+    try {
+      payload = this.jwtService.verify(refreshToken, {
+        secret: this.configService.get<string>('JWT_REFRESH_SECRET'),
+      });
+    } catch {
+      return;
+    }
 
-    if (payload?.sub && payload?.jti) {
+    if (payload?.sub && payload.jti) {
       await this.redisService.del(`refresh:${payload.sub}:${payload.jti}`);
     }
   }
 
-  async issueTokens(
-    employee: EmployeeTokenData,
-    permissions: string[],
-  ): Promise<TokenPair> {
-    const tokenId = uuidv4();
+  setDeviceSessionCookie(res: Response, sessionId: string): void {
+    res.cookie(DEVICE_SESSION_COOKIE, sessionId, {
+      httpOnly: true,
+      secure: this.configService.get('COOKIE_SECURE') === 'true',
+      sameSite: 'lax',
+      maxAge: DEVICE_SESSION_TTL_MS,
+      path: '/api/auth',
+    });
+  }
 
-    const accessPayload: JwtPayload = {
+  clearDeviceSessionCookie(res: Response): void {
+    res.clearCookie(DEVICE_SESSION_COOKIE, { path: '/api/auth' });
+  }
+
+  clearLegacyRefreshCookie(res: Response): void {
+    res.clearCookie(LEGACY_REFRESH_COOKIE, { path: '/api/auth' });
+  }
+
+  private issueAccessToken(employee: EmployeeTokenData, permissions: string[]): string {
+    const payload: JwtPayload = {
       sub: employee.id,
       email: employee.email,
       firstName: employee.firstName,
@@ -150,42 +222,30 @@ export class AuthService {
       lastSeen: employee.lastSeen?.toISOString() ?? null,
     };
 
-    const refreshPayload = { sub: employee.id, jti: tokenId };
-
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const access_token = this.jwtService.sign(accessPayload as any, {
+    return this.jwtService.sign(payload as any, {
       secret: this.configService.get<string>('JWT_ACCESS_SECRET'),
       expiresIn: this.configService.get('JWT_ACCESS_EXPIRES_IN'),
     });
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const refresh_token = this.jwtService.sign(refreshPayload as any, {
-      secret: this.configService.get<string>('JWT_REFRESH_SECRET'),
-      expiresIn: this.configService.get('JWT_REFRESH_EXPIRES_IN'),
-    });
-
-    await this.redisService.set(
-      `refresh:${employee.id}:${tokenId}`,
-      '1',
-      'EX',
-      REFRESH_TTL_SECONDS,
-    );
-
-    return { access_token, refresh_token };
   }
 
-  setRefreshCookie(res: Response, token: string): void {
-    res.cookie('refresh_token', token, {
-      httpOnly: true,
-      secure: this.configService.get('COOKIE_SECURE') === 'true',
-      sameSite: 'lax',
-      maxAge: REFRESH_TTL_MS,
-      path: '/api/auth',
+  private findEmployeeWithPermissions(where: Prisma.EmployeeWhereUniqueInput) {
+    return this.prisma.employee.findUnique({
+      where,
+      include: {
+        roleAssignments: {
+          include: {
+            employeeRole: {
+              include: {
+                permissions: {
+                  include: { employeePermission: true },
+                },
+              },
+            },
+          },
+        },
+      },
     });
-  }
-
-  clearRefreshCookie(res: Response): void {
-    res.clearCookie('refresh_token', { path: '/api/auth' });
   }
 
   private extractPermissions(employee: {
@@ -199,8 +259,8 @@ export class AuthService {
   }): string[] {
     const permissionSet = new Set<string>();
     for (const assignment of employee.roleAssignments) {
-      for (const rp of assignment.employeeRole.permissions) {
-        permissionSet.add(rp.employeePermission.name);
+      for (const rolePermission of assignment.employeeRole.permissions) {
+        permissionSet.add(rolePermission.employeePermission.name);
       }
     }
     return Array.from(permissionSet);

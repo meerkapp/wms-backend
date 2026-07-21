@@ -1,9 +1,12 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
+  Param,
+  ParseUUIDPipe,
   Post,
   Req,
   Res,
@@ -14,7 +17,9 @@ import { ApiBearerAuth, ApiCookieAuth, ApiOperation, ApiResponse, ApiTags } from
 import { Request, Response } from 'express';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { AuthService } from './auth.service';
+import { AuthService, DeviceAccountSummary } from './auth.service';
+import { DEVICE_SESSION_COOKIE } from './device-session.service';
+import { AccountSessionDto } from './dto/account-session.dto';
 import { AuthResponseDto } from './dto/auth-response.dto';
 import { LoginDto } from './dto/login.dto';
 import { JwtPayload } from './strategies/jwt.strategy';
@@ -31,50 +36,104 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async login(
     @Body() dto: LoginDto,
+    @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ): Promise<{ access_token: string }> {
-    const { access_token, refresh_token } = await this.authService.login(dto);
-    this.authService.setRefreshCookie(res, refresh_token);
+    const currentSessionId = req.cookies[DEVICE_SESSION_COOKIE] as string | undefined;
+    const { access_token, deviceSessionId } = await this.authService.login(dto, currentSessionId);
+    this.authService.setDeviceSessionCookie(res, deviceSessionId);
+
+    const legacyRefreshToken = req.cookies['refresh_token'] as string | undefined;
+    if (legacyRefreshToken) await this.authService.revokeLegacyRefreshToken(legacyRefreshToken);
+    this.authService.clearLegacyRefreshCookie(res);
     return { access_token };
   }
 
   @ApiOperation({
-    summary: 'Refresh access token (rotation)',
-    description: 'Uses the httpOnly refresh token cookie and rotates it after a successful refresh.',
+    summary: 'Refresh access for one account authorized on this device',
   })
   @ApiResponse({ status: 200, type: AuthResponseDto })
-  @ApiResponse({ status: 401, description: 'Invalid or expired refresh token' })
-  @ApiCookieAuth('refresh_token')
+  @ApiResponse({ status: 401, description: 'Invalid device or account session' })
+  @ApiCookieAuth(DEVICE_SESSION_COOKIE)
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
   async refresh(
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
+    @Body() dto: AccountSessionDto,
   ): Promise<{ access_token: string }> {
-    const refreshToken = req.cookies['refresh_token'] as string | undefined;
-    if (!refreshToken) throw new UnauthorizedException();
-
-    const { access_token, refresh_token } = await this.authService.refresh(refreshToken);
-    this.authService.setRefreshCookie(res, refresh_token);
+    const { access_token, deviceSessionId } = await this.authorizeAccount(req, dto.accountId);
+    this.authService.setDeviceSessionCookie(res, deviceSessionId);
+    this.authService.clearLegacyRefreshCookie(res);
     return { access_token };
   }
 
-  @ApiOperation({ summary: 'Logout and invalidate refresh token' })
+  @ApiOperation({ summary: 'List accounts authorized on this device' })
+  @ApiResponse({ status: 200 })
+  @ApiCookieAuth(DEVICE_SESSION_COOKIE)
+  @Get('accounts')
+  async accounts(@Req() req: Request): Promise<{ accounts: DeviceAccountSummary[] }> {
+    const deviceSessionId = req.cookies[DEVICE_SESSION_COOKIE] as string | undefined;
+    return {
+      accounts: deviceSessionId ? await this.authService.listDeviceAccounts(deviceSessionId) : [],
+    };
+  }
+
+  @ApiOperation({ summary: 'Activate an account authorized on this device' })
+  @ApiResponse({ status: 200, type: AuthResponseDto })
+  @ApiResponse({ status: 401, description: 'Account is not authorized on this device' })
+  @ApiCookieAuth(DEVICE_SESSION_COOKIE)
+  @Post('accounts/:accountId/activate')
+  @HttpCode(HttpStatus.OK)
+  async activateAccount(
+    @Param('accountId', ParseUUIDPipe) accountId: string,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<{ access_token: string }> {
+    const { access_token, deviceSessionId } = await this.authorizeAccount(req, accountId);
+    this.authService.setDeviceSessionCookie(res, deviceSessionId);
+    this.authService.clearLegacyRefreshCookie(res);
+    return { access_token };
+  }
+
+  @ApiOperation({ summary: 'Remove one account from this device' })
+  @ApiResponse({ status: 200 })
+  @ApiCookieAuth(DEVICE_SESSION_COOKIE)
+  @Delete('accounts/:accountId')
+  async removeAccount(
+    @Param('accountId', ParseUUIDPipe) accountId: string,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<{ success: boolean }> {
+    const deviceSessionId = req.cookies[DEVICE_SESSION_COOKIE] as string | undefined;
+    if (!deviceSessionId) throw new UnauthorizedException();
+
+    const remaining = await this.authService.removeDeviceAccount(deviceSessionId, accountId);
+    if (remaining === 0) this.authService.clearDeviceSessionCookie(res);
+    return { success: true };
+  }
+
+  @ApiOperation({ summary: 'Remove the current account from this device' })
   @ApiResponse({ status: 200 })
   @ApiBearerAuth()
-  @ApiCookieAuth('refresh_token')
+  @ApiCookieAuth(DEVICE_SESSION_COOKIE)
   @UseGuards(JwtAuthGuard)
   @Post('logout')
   @HttpCode(HttpStatus.OK)
   async logout(
+    @CurrentUser() user: JwtPayload,
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ): Promise<{ success: boolean }> {
-    const refreshToken = req.cookies['refresh_token'] as string | undefined;
-    if (refreshToken) {
-      await this.authService.logout(refreshToken);
+    const deviceSessionId = req.cookies[DEVICE_SESSION_COOKIE] as string | undefined;
+    if (deviceSessionId) {
+      const remaining = await this.authService.removeDeviceAccount(deviceSessionId, user.sub);
+      if (remaining === 0) this.authService.clearDeviceSessionCookie(res);
     }
-    this.authService.clearRefreshCookie(res);
+
+    const legacyRefreshToken = req.cookies['refresh_token'] as string | undefined;
+    if (legacyRefreshToken) await this.authService.revokeLegacyRefreshToken(legacyRefreshToken);
+    this.authService.clearLegacyRefreshCookie(res);
     return { success: true };
   }
 
@@ -94,5 +153,19 @@ export class AuthController {
       permissions: user.permissions,
       lastSeen: user.lastSeen,
     };
+  }
+
+  private authorizeAccount(req: Request, accountId: string) {
+    const deviceSessionId = req.cookies[DEVICE_SESSION_COOKIE] as string | undefined;
+    if (deviceSessionId) {
+      return this.authService.activateAccount(deviceSessionId, accountId);
+    }
+
+    const legacyRefreshToken = req.cookies['refresh_token'] as string | undefined;
+    if (legacyRefreshToken) {
+      return this.authService.migrateLegacyRefreshToken(legacyRefreshToken, accountId);
+    }
+
+    throw new UnauthorizedException();
   }
 }
