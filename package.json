@@ -14,9 +14,6 @@
   "bugs": {
     "url": "https://github.com/meerkapp/wms-backend/issues"
   },
-  "prisma": {
-    "seed": "ts-node --compiler-options {\"module\":\"CommonJS\"} prisma/seed.ts"
-  },
   "scripts": {
     "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\"",
@@ -25,10 +22,11 @@
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main",
     "start:migrate:prod": "prisma migrate deploy && node dist/main",
-    "seed:dev": "ts-node --compiler-options '{\"module\":\"CommonJS\"}' prisma/seed-dev.ts",
+    "seed": "prisma db seed",
+    "seed:dev": "ts-node prisma/seed-dev.ts",
     "studio": "prisma studio",
-    "lint": "eslint src/**/*.ts",
-    "lint:fix": "eslint src/**/*.ts --fix",
+    "lint": "eslint src/**/*.ts prisma/seed*.ts",
+    "lint:fix": "eslint src/**/*.ts prisma/seed*.ts --fix",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",

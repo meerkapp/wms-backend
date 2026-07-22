@@ -7,7 +7,13 @@ import globals from 'globals';
 export default [
   eslint.configs.recommended,
   {
-    files: ['src/**/*.ts', 'test/**/*.ts', 'prisma.config.ts', 'contracts/**/*.ts'],
+    files: [
+      'src/**/*.ts',
+      'test/**/*.ts',
+      'prisma.config.ts',
+      'prisma/seed*.ts',
+      'contracts/**/*.ts',
+    ],
     languageOptions: {
       parser: tsparser,
       parserOptions: {
