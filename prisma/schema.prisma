@@ -202,7 +202,7 @@ enum BarcodeType {
 model ProductMeasure {
   id        Int      @id @default(autoincrement())
   name      String?  @unique
-  code      String?  @unique
+  code      String   @unique
   updatedAt DateTime @updatedAt @map("updated_at")
 
   products ProductItem[]
@@ -276,7 +276,7 @@ model ProductItem {
   productCollectionId Int?              @map("product_collection_id")
   productTypeId       Int               @map("product_type_id")
   productBrandId      Int?              @map("product_brand_id")
-  productMeasureId    Int?              @map("product_measure_id")
+  productMeasureId    Int               @map("product_measure_id")
   countryId           Int?              @map("country_id")
   characteristics     Json              @default("{}") @map("characteristics")
   writeoffStrategy    WriteoffStrategy? @map("writeoff_strategy")
@@ -286,7 +286,7 @@ model ProductItem {
   productCollection ProductCollection? @relation(fields: [productCollectionId], references: [id], onDelete: SetNull)
   productType       ProductType        @relation(fields: [productTypeId], references: [id])
   productBrand      ProductBrand?      @relation(fields: [productBrandId], references: [id], onDelete: SetNull)
-  productMeasure    ProductMeasure?    @relation(fields: [productMeasureId], references: [id], onDelete: SetNull)
+  productMeasure    ProductMeasure     @relation(fields: [productMeasureId], references: [id], onDelete: Restrict)
   country           Country?           @relation(fields: [countryId], references: [id], onDelete: SetNull)
   barcodes          ProductBarcode[]
   packages          ProductPackage[]
@@ -316,7 +316,7 @@ model ProductPackage {
   name             String?
   isBase           Boolean  @default(false) @map("is_base")
   productItemId    Int      @map("product_item_id")
-  conversionFactor Float    @default(1) @map("conversion_factor")
+  conversionFactor Decimal  @default(1) @map("conversion_factor") @db.Decimal(18, 6)
   updatedAt        DateTime @updatedAt @map("updated_at")
 
   productItem ProductItem    @relation(fields: [productItemId], references: [id], onDelete: Cascade)

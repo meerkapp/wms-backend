@@ -224,10 +224,7 @@ async function main(): Promise<void> {
         productBrandId:
           faker.helpers.maybe(() => faker.helpers.arrayElement(brands).id, { probability: 0.8 }) ??
           null,
-        productMeasureId:
-          faker.helpers.maybe(() => faker.helpers.arrayElement(measures).id, {
-            probability: 0.7,
-          }) ?? null,
+        productMeasureId: measures[itemIndex % measures.length].id,
         countryId:
           faker.helpers.maybe(() => faker.helpers.arrayElement(countries).id, {
             probability: 0.5,

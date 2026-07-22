@@ -1,5 +1,9 @@
 import { INestApplication } from '@nestjs/common';
-import { ProductItemStatsFetchResponseSchema } from '@meerkapp/wms-contracts';
+import {
+  ProductItemStatsFetchResponseSchema,
+  ProductItemWithRelationsSchema,
+  ProductPackageSchema,
+} from '@meerkapp/wms-contracts';
 import * as request from 'supertest';
 import { PrismaService } from '../src/common/prisma/prisma.service';
 import { parseSyncCursor } from '../src/modules/sync/sync-cursor';
@@ -17,12 +21,17 @@ describe('Sync (e2e)', () => {
   let otherProductShipmentId: number;
   let otherProductItemStatsId: number;
   let readPolicyProductCollectionId: number;
+  let productMeasureId: number;
+  let baseProductPackageId: number;
+  let readPolicyProductItemId: number;
 
   beforeAll(async () => {
     app = await createApp();
     prisma = app.get(PrismaService);
     await cleanDatabase(prisma);
     ({ access_token: accessToken } = await seedAdmin(app));
+    productMeasureId = (await prisma.productMeasure.findUniqueOrThrow({ where: { code: 'pcs' } }))
+      .id;
 
     const suffix = Date.now();
     const country = await prisma.country.findFirstOrThrow({ where: { code: 'AU' } });
@@ -63,7 +72,11 @@ describe('Sync (e2e)', () => {
         name: `Global Sync Product ${suffix}`,
         productTypeId: productType.id,
         productCollectionId: productCollection.id,
+        productMeasureId,
       },
+    });
+    const baseProductPackage = await prisma.productPackage.create({
+      data: { isBase: true, productItemId: productItem.id },
     });
     const shipment = await prisma.productShipment.create({
       data: {
@@ -99,6 +112,8 @@ describe('Sync (e2e)', () => {
     otherProductShipmentId = shipment.id;
     otherProductItemStatsId = stats.id;
     readPolicyProductCollectionId = productCollection.id;
+    baseProductPackageId = baseProductPackage.id;
+    readPolicyProductItemId = productItem.id;
   });
 
   afterAll(async () => {
@@ -136,6 +151,41 @@ describe('Sync (e2e)', () => {
         }),
       );
       expect(res.body).toHaveProperty('cursor');
+    });
+
+    it('serializes package conversion factors as exact decimal strings', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/api/sync/pull?table=product_package')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(200);
+      const productPackage = res.body.items.find(
+        (item: { id: number }) => item.id === baseProductPackageId,
+      );
+
+      expect(productPackage).toMatchObject({
+        productItemId: readPolicyProductItemId,
+        conversionFactor: '1',
+      });
+      expect(() => ProductPackageSchema.parse(productPackage)).not.toThrow();
+    });
+
+    it('enforces package conversion constraints in the database', async () => {
+      await expect(
+        prisma.productPackage.create({
+          data: {
+            name: 'Invalid zero factor',
+            productItemId: readPolicyProductItemId,
+            conversionFactor: 0,
+          },
+        }),
+      ).rejects.toThrow();
+
+      await expect(
+        prisma.productPackage.update({
+          where: { id: baseProductPackageId },
+          data: { conversionFactor: 2 },
+        }),
+      ).rejects.toThrow();
     });
 
     it('rejects unknown table', async () => {
@@ -277,6 +327,7 @@ describe('Sync (e2e)', () => {
           sku: `SYNC-ROOT-${suffix}`,
           name: `Sync Root Product ${suffix}`,
           productTypeId: productType.id,
+          productMeasureId,
         },
       });
       const collectionProductItem = await prisma.productItem.create({
@@ -285,6 +336,7 @@ describe('Sync (e2e)', () => {
           name: `Sync Collection Product ${suffix}`,
           productTypeId: productType.id,
           productCollectionId: productCollection.id,
+          productMeasureId,
         },
       });
       const productBarcode = await prisma.productBarcode.create({
@@ -335,7 +387,9 @@ describe('Sync (e2e)', () => {
       expect(res.body.items[0]).toMatchObject({
         id: collectionProductItemId,
         productTypeId,
+        productMeasure: { code: 'pcs' },
       });
+      expect(() => ProductItemWithRelationsSchema.parse(res.body.items[0])).not.toThrow();
       expect(res.body).toHaveProperty('cursor');
       expect(res.body.hasMore).toBe(false);
     });

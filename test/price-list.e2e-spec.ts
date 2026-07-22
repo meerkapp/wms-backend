@@ -10,12 +10,15 @@ describe('PriceList (e2e)', () => {
   let prisma: PrismaService;
   let adminToken: string;
   let noPermToken: string;
+  let productMeasureId: number;
 
   beforeAll(async () => {
     app = await createApp();
     prisma = app.get(PrismaService);
     await cleanDatabase(prisma);
     ({ access_token: adminToken } = await seedAdmin(app));
+    productMeasureId = (await prisma.productMeasure.findUniqueOrThrow({ where: { code: 'pcs' } }))
+      .id;
 
     const email = 'noperm-price-list@e2e.test';
     const password = 'Test1234!';
@@ -112,6 +115,7 @@ describe('PriceList (e2e)', () => {
           sku: `PRICE-${suffix}`,
           name: `Price list product ${suffix}`,
           productTypeId: productType.id,
+          productMeasureId,
         },
       });
       const productPackage = await prisma.productPackage.create({
@@ -622,6 +626,7 @@ describe('PriceList (e2e)', () => {
           sku: `PRICES-${suffix}`,
           name: `Prices product ${suffix}`,
           productTypeId: productType.id,
+          productMeasureId,
         },
       });
       const [firstPackage, secondPackage, priceList] = await Promise.all([
@@ -745,6 +750,7 @@ describe('PriceList (e2e)', () => {
           sku: `HIERARCHY-${suffix}`,
           name: `Hierarchy product ${suffix}`,
           productTypeId: productType.id,
+          productMeasureId,
         },
       });
       const productPackage = await prisma.productPackage.create({

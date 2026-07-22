@@ -41,6 +41,11 @@ export async function seedAdmin(app: INestApplication): Promise<{ access_token: 
     update: {},
     create: { code: 'AU' },
   });
+  await app.get(PrismaService).productMeasure.upsert({
+    where: { code: 'pcs' },
+    update: {},
+    create: { code: 'pcs' },
+  });
   const res = await request(app.getHttpServer()).post('/api/setup/init').send(ADMIN).expect(201);
   return res.body as { access_token: string };
 }

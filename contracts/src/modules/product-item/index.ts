@@ -21,11 +21,12 @@ export const ProductItemSchema = ProductItemModelSchema.omit({
   barcodes: true,
   packages: true,
   shipments: true,
+  stats: true,
 }).extend({ updatedAt: z.string() });
 
 export const ProductItemWithRelationsSchema = ProductItemSchema.extend({
   productBrand: ProductBrandSchema.nullable(),
-  productMeasure: ProductMeasureSchema.nullable(),
+  productMeasure: ProductMeasureSchema,
 });
 
 export const ProductItemStatsQuerySchema = z.object({
