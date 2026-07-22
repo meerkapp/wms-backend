@@ -24,6 +24,7 @@ export const SyncEntityIdSchema = z.union([z.string(), z.number()]);
 export function createSyncFetchResponseSchema<T extends z.ZodTypeAny>(itemSchema: T) {
   return z.object({
     items: z.array(itemSchema),
+    deletedIds: z.array(SyncEntityIdSchema).optional(),
     cursor: SyncCursorSchema,
     hasMore: z.boolean(),
   });
@@ -61,6 +62,7 @@ export type SyncEntityId = z.infer<typeof SyncEntityIdSchema>;
 
 export interface SyncFetchResponse<T = unknown> {
   items: T[];
+  deletedIds?: SyncEntityId[];
   cursor: SyncCursor;
   hasMore: boolean;
 }

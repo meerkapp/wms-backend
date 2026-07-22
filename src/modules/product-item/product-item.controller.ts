@@ -12,9 +12,12 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { JwtPayload } from '../auth/strategies/jwt.strategy';
+import { FindArchivedProductItemsDto } from './dto/find-archived-product-items.dto';
+import { FindProductItemByBarcodeDto } from './dto/find-product-item-by-barcode.dto';
 import { FindProductItemFavoritesDto } from './dto/find-product-item-favorites.dto';
 import { ProductItemStatsQueryDto } from './dto/product-item-stats-query.dto';
 import { ProductItemService } from './product-item.service';
@@ -30,6 +33,18 @@ export class ProductItemController {
   @Get('stats')
   getStats(@Query() query: ProductItemStatsQueryDto) {
     return this.productItemService.getStats(query.productCollectionId, query.warehouseId);
+  }
+
+  @ApiOperation({ summary: 'Get archived product items' })
+  @Get('archive')
+  findArchived(@Query() query: FindArchivedProductItemsDto) {
+    return this.productItemService.findArchived(query.page, query.limit);
+  }
+
+  @ApiOperation({ summary: 'Find a product item by barcode, including archived items' })
+  @Get('barcode')
+  findByBarcode(@Query() query: FindProductItemByBarcodeDto) {
+    return this.productItemService.findByBarcode(query.code);
   }
 
   @ApiOperation({ summary: 'Get current employee product favorites' })
@@ -49,5 +64,19 @@ export class ProductItemController {
   @HttpCode(HttpStatus.NO_CONTENT)
   removeFavorite(@CurrentUser() user: JwtPayload, @Param('id', ParseIntPipe) id: number) {
     return this.productItemService.removeFavorite(user.sub, id);
+  }
+
+  @ApiOperation({ summary: 'Archive an out-of-stock product item' })
+  @RequirePermissions('product_item:archive')
+  @Put(':id/archive')
+  archive(@CurrentUser() user: JwtPayload, @Param('id', ParseIntPipe) id: number) {
+    return this.productItemService.archive(user.sub, id);
+  }
+
+  @ApiOperation({ summary: 'Restore an archived product item' })
+  @RequirePermissions('product_item:archive')
+  @Delete(':id/archive')
+  restore(@Param('id', ParseIntPipe) id: number) {
+    return this.productItemService.restore(id);
   }
 }

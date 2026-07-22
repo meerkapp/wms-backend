@@ -24,7 +24,8 @@ export const ProductItemSchema = ProductItemModelSchema.omit({
   shipments: true,
   stats: true,
   favorites: true,
-}).extend({ updatedAt: z.string() });
+  archivedBy: true,
+}).extend({ archivedAt: z.string().nullable(), updatedAt: z.string() });
 
 export const ProductItemWithRelationsSchema = ProductItemSchema.extend({
   productBrand: ProductBrandSchema.nullable(),
@@ -34,6 +35,10 @@ export const ProductItemWithRelationsSchema = ProductItemSchema.extend({
 export const ProductItemStatsQuerySchema = z.object({
   productCollectionId: z.coerce.number().int().positive(),
   warehouseId: z.coerce.number().int().positive(),
+});
+
+export const ProductItemBarcodeQuerySchema = z.object({
+  code: z.string().trim().min(1).max(255),
 });
 
 export const ProductItemStatsFetchQuerySchema = z.object({
@@ -81,6 +86,8 @@ export const ProductItemFavoriteChangeSchema = z.discriminatedUnion('isFavorite'
 
 export type ProductItem = z.infer<typeof ProductItemSchema>;
 export type ProductItemWithRelations = z.infer<typeof ProductItemWithRelationsSchema>;
+export type ProductItemArchivePage = Paginated<ProductItemWithRelations>;
+export type ProductItemBarcodeQuery = z.infer<typeof ProductItemBarcodeQuerySchema>;
 export type ProductItemStatsQuery = z.infer<typeof ProductItemStatsQuerySchema>;
 export type ProductItemStatsFetchQuery = z.infer<typeof ProductItemStatsFetchQuerySchema>;
 export type ProductItemStats = z.infer<typeof ProductItemStatsSchema>;

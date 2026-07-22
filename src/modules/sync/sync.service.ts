@@ -54,13 +54,15 @@ export class SyncService {
 
     const hasMore = requestLimit !== undefined && rows.length > requestLimit;
     const pageRows = hasMore ? rows.slice(0, requestLimit) : rows;
-    const items = serializeSyncItems(pageRows);
+    const serializedRows = serializeSyncItems(pageRows);
+    const { items, deletedIds } = activeReadModelRows(table, serializedRows);
     // A composite timestamp/id cursor prevents page-boundary loss while the
     // longer-term revision/outbox cursor is not available yet.
-    const nextCursor = cursorFromItems(items) ?? (cursor ? encodeSyncCursor(cursor) : null);
+    const nextCursor = cursorFromItems(serializedRows) ?? (cursor ? encodeSyncCursor(cursor) : null);
 
     return {
       items,
+      ...(deletedIds.length > 0 ? { deletedIds } : {}),
       cursor: nextCursor,
       hasMore,
     };
@@ -76,7 +78,10 @@ export class SyncService {
 
     const fetchLimit = normalizeLimit(query.limit) ?? DEFAULT_FETCH_LIMIT;
     const rows = await this.prisma.productItem.findMany({
-      where: hasId ? { id: query.id } : { productCollectionId: query.productCollectionId },
+      where: {
+        archivedAt: null,
+        ...(hasId ? { id: query.id } : { productCollectionId: query.productCollectionId }),
+      },
       include: {
         productBrand: true,
         productMeasure: true,
@@ -98,6 +103,7 @@ export class SyncService {
       where: {
         ...(query.code ? { code: query.code } : {}),
         ...(query.productItemId !== undefined ? { productItemId: query.productItemId } : {}),
+        productItem: { archivedAt: null },
       },
       orderBy: UPDATED_AT_ORDER,
       take: fetchLimit + 1,
@@ -112,6 +118,7 @@ export class SyncService {
       where: {
         warehouseId: query.warehouseId,
         ...(query.productItemId !== undefined ? { productItemId: query.productItemId } : {}),
+        productItem: { archivedAt: null },
       },
       orderBy: UPDATED_AT_ORDER,
       take: fetchLimit + 1,
@@ -126,9 +133,12 @@ export class SyncService {
     const rows = await this.prisma.productItemStats.findMany({
       where: {
         warehouseId: query.warehouseId,
-        ...(query.productCollectionId === undefined
-          ? {}
-          : { productItem: { productCollectionId: query.productCollectionId } }),
+        productItem: {
+          archivedAt: null,
+          ...(query.productCollectionId === undefined
+            ? {}
+            : { productCollectionId: query.productCollectionId }),
+        },
         ...updatedAfterWhere(cursor),
       },
       orderBy: UPDATED_AT_ORDER,
@@ -170,6 +180,23 @@ function normalizeLimit(limit?: number): number | undefined {
 }
 
 const UPDATED_AT_ORDER = [{ updatedAt: 'asc' as const }, { id: 'asc' as const }];
+
+function activeReadModelRows(
+  table: string,
+  rows: unknown[],
+): { items: unknown[]; deletedIds: number[] } {
+  if (table !== 'product_item') return { items: rows, deletedIds: [] };
+
+  const items: unknown[] = [];
+  const deletedIds: number[] = [];
+  for (const row of rows) {
+    if (!row || typeof row !== 'object') continue;
+    const productItem = row as { id?: unknown; archivedAt?: unknown };
+    if (productItem.archivedAt === null || productItem.archivedAt === undefined) items.push(row);
+    else if (typeof productItem.id === 'number') deletedIds.push(productItem.id);
+  }
+  return { items, deletedIds };
+}
 
 export function parseOptionalPositiveInt(
   raw: string | number | undefined | null,

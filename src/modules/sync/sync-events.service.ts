@@ -62,9 +62,22 @@ export class SyncEventsService {
       changes.modifiedIds?.length ? definition.findByIds(this.prisma, changes.modifiedIds) : [],
     ]);
 
-    const removed = changes.removedIds ?? [];
+    let removed = changes.removedIds ?? [];
 
     if (!isSyncTableName(tableName)) {
+      return;
+    }
+
+    if (tableName === 'product_item') {
+      const archivedAdded = archivedProductItemIds(added);
+      const archivedModified = archivedProductItemIds(modified);
+      removed = [...new Set([...removed, ...archivedAdded, ...archivedModified])];
+      const archivedIds = new Set([...archivedAdded, ...archivedModified]);
+      this.emitTableChange<unknown>(tableName, {
+        added: added.filter((item) => !hasEntityId(item, archivedIds)),
+        modified: modified.filter((item) => !hasEntityId(item, archivedIds)),
+        removed,
+      });
       return;
     }
 
@@ -72,4 +85,22 @@ export class SyncEventsService {
     // operational space. Private events may still call emitTableChange with a scope.
     this.emitTableChange<unknown>(tableName, { added, modified, removed });
   }
+}
+
+function archivedProductItemIds(items: unknown[]): SyncEntityId[] {
+  return items.flatMap((item) => {
+    if (!item || typeof item !== 'object') return [];
+    const row = item as { id?: unknown; archivedAt?: unknown };
+    return row.archivedAt !== null &&
+      row.archivedAt !== undefined &&
+      (typeof row.id === 'number' || typeof row.id === 'string')
+      ? [row.id]
+      : [];
+  });
+}
+
+function hasEntityId(item: unknown, ids: Set<SyncEntityId>): boolean {
+  if (!item || typeof item !== 'object') return false;
+  const id = (item as { id?: unknown }).id;
+  return (typeof id === 'number' || typeof id === 'string') && ids.has(id);
 }

@@ -26,6 +26,8 @@ export const ALL_PERMISSIONS = [
   // product type management
   'product_type:create',
   'product_type:update',
+  // product item lifecycle
+  'product_item:archive',
   // folder management
   'folder:create',
   'folder:update',

@@ -144,23 +144,35 @@ export const SYNC_TABLES = {
     tableName: 'product_package',
     pull: (prisma, options) =>
       prisma.productPackage.findMany({
-        where: updatedAfterWhere(options.cursor),
+        where: {
+          productItem: { archivedAt: null },
+          ...updatedAfterWhere(options.cursor),
+        },
         orderBy: UPDATED_AT_ORDER,
         ...withTake(options.limit),
       }),
     findByIds: (prisma, ids) =>
-      prisma.productPackage.findMany({ where: byIdsWhere(ids), orderBy: UPDATED_AT_ORDER }),
+      prisma.productPackage.findMany({
+        where: { ...byIdsWhere(ids), productItem: { archivedAt: null } },
+        orderBy: UPDATED_AT_ORDER,
+      }),
   },
   product_shipment: {
     tableName: 'product_shipment',
     pull: (prisma, options) =>
       prisma.productShipment.findMany({
-        where: updatedAfterWhere(options.cursor),
+        where: {
+          productItem: { archivedAt: null },
+          ...updatedAfterWhere(options.cursor),
+        },
         orderBy: UPDATED_AT_ORDER,
         ...withTake(options.limit),
       }),
     findByIds: (prisma, ids) =>
-      prisma.productShipment.findMany({ where: byIdsWhere(ids), orderBy: UPDATED_AT_ORDER }),
+      prisma.productShipment.findMany({
+        where: { ...byIdsWhere(ids), productItem: { archivedAt: null } },
+        orderBy: UPDATED_AT_ORDER,
+      }),
   },
   product_item: {
     tableName: 'product_item',
@@ -182,23 +194,35 @@ export const SYNC_TABLES = {
     tableName: 'product_item_stats',
     pull: (prisma, options) =>
       prisma.productItemStats.findMany({
-        where: updatedAfterWhere(options.cursor),
+        where: {
+          productItem: { archivedAt: null },
+          ...updatedAfterWhere(options.cursor),
+        },
         orderBy: UPDATED_AT_ORDER,
         ...withTake(options.limit),
       }),
     findByIds: (prisma, ids) =>
-      prisma.productItemStats.findMany({ where: byIdsWhere(ids), orderBy: UPDATED_AT_ORDER }),
+      prisma.productItemStats.findMany({
+        where: { ...byIdsWhere(ids), productItem: { archivedAt: null } },
+        orderBy: UPDATED_AT_ORDER,
+      }),
   },
   product_barcode: {
     tableName: 'product_barcode',
     pull: (prisma, options) =>
       prisma.productBarcode.findMany({
-        where: updatedAfterWhere(options.cursor),
+        where: {
+          productItem: { archivedAt: null },
+          ...updatedAfterWhere(options.cursor),
+        },
         orderBy: UPDATED_AT_ORDER,
         ...withTake(options.limit),
       }),
     findByIds: (prisma, ids) =>
-      prisma.productBarcode.findMany({ where: byIdsWhere(ids), orderBy: UPDATED_AT_ORDER }),
+      prisma.productBarcode.findMany({
+        where: { ...byIdsWhere(ids), productItem: { archivedAt: null } },
+        orderBy: UPDATED_AT_ORDER,
+      }),
   },
 } satisfies Record<SyncTableName, SyncTableDefinition>;
 
