@@ -28,7 +28,7 @@ describe('Setup (e2e)', () => {
   });
 
   describe('POST /api/setup/init', () => {
-    it('creates first admin and starts a device session', async () => {
+    it('creates first admin, installation defaults, and starts a device session', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/setup/init')
         .send(ADMIN)
@@ -36,6 +36,26 @@ describe('Setup (e2e)', () => {
 
       expect(res.body).toHaveProperty('access_token');
       expect(extractCookie(res, 'device_session')).toBeDefined();
+
+      const [productTypes, defaultPriceLists, settings] = await Promise.all([
+        prisma.productType.findMany(),
+        prisma.priceList.findMany({ where: { isDefault: true } }),
+        prisma.serverSettings.findUnique({ where: { id: 1 } }),
+      ]);
+
+      expect(productTypes).toHaveLength(1);
+      expect(productTypes[0]).toMatchObject({
+        name: 'Default',
+        defaultWriteoffStrategy: 'FIFO',
+        skuMode: 'GLOBAL',
+      });
+      expect(defaultPriceLists).toHaveLength(1);
+      expect(defaultPriceLists[0]).toMatchObject({
+        name: 'Default',
+        currency: 'EUR',
+        isDefault: true,
+      });
+      expect(settings?.setupCompleted).toBe(true);
     });
 
     it('returns 403 when setup already done', async () => {

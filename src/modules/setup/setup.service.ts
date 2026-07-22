@@ -49,18 +49,26 @@ export class SetupService {
         },
       });
 
-      await tx.serverSettings.upsert({
-        where: { id: 1 },
-        update: { setupCompleted: true },
-        create: { id: 1, setupCompleted: true },
-      });
-
       await tx.priceList.create({
         data: {
           name: 'Default',
           currency: 'EUR',
           isDefault: true,
         },
+      });
+
+      await tx.productType.create({
+        data: {
+          name: 'Default',
+          defaultWriteoffStrategy: 'FIFO',
+          skuMode: 'GLOBAL',
+        },
+      });
+
+      await tx.serverSettings.upsert({
+        where: { id: 1 },
+        update: { setupCompleted: true },
+        create: { id: 1, setupCompleted: true },
       });
 
       return newEmployee;
