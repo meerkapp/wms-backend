@@ -121,6 +121,10 @@ describe('Product item archive (e2e)', () => {
       where: { id: { in: [zeroStockProductId, stockedProductId] } },
       data: { archivedAt: null, archivedByEmployeeId: null },
     });
+    await prisma.productItemStats.update({
+      where: { id: zeroStockStatsId },
+      data: { quantity: 0 },
+    });
   });
 
   afterAll(async () => {
@@ -175,6 +179,22 @@ describe('Product item archive (e2e)', () => {
 
     expect(
       await prisma.productItem.findUniqueOrThrow({ where: { id: stockedProductId } }),
+    ).toMatchObject({ archivedAt: null, archivedByEmployeeId: null });
+  });
+
+  it('rejects archiving when an aggregate stock balance is negative', async () => {
+    await prisma.productItemStats.update({
+      where: { id: zeroStockStatsId },
+      data: { quantity: '-1' },
+    });
+
+    await request(app.getHttpServer())
+      .put(`/api/product-item/${zeroStockProductId}/archive`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(409);
+
+    expect(
+      await prisma.productItem.findUniqueOrThrow({ where: { id: zeroStockProductId } }),
     ).toMatchObject({ archivedAt: null, archivedByEmployeeId: null });
   });
 

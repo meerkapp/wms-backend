@@ -94,12 +94,12 @@ export class ProductItemService {
       if (!productItem) throw new NotFoundException(`Product item ${productItemId} not found`);
       if (productItem.archivedAt !== null) return this.serializeProductItem(productItem);
 
-      const positiveStats = await tx.productItemStats.findFirst({
-        where: { productItemId, quantity: { gt: 0 } },
+      const nonZeroStats = await tx.productItemStats.findFirst({
+        where: { productItemId, quantity: { not: 0 } },
         select: { id: true },
       });
-      if (positiveStats) {
-        throw new ConflictException('Product item still has stock');
+      if (nonZeroStats) {
+        throw new ConflictException('Product item stock balance is not zero');
       }
 
       const archivedAt = new Date();
