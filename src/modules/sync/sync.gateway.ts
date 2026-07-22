@@ -69,6 +69,10 @@ export class SyncGateway implements OnGatewayConnection {
     this.server.to(this.authenticatedRoom()).emit(event, payload);
   }
 
+  emitUserEvent<T>(event: string, userId: string, payload: T): void {
+    this.server.to(this.userRoom(userId)).emit(event, payload);
+  }
+
   private authenticate(socket: Socket): JwtPayload | null {
     const authToken = socket.handshake.auth?.token as string | undefined;
     const headerToken = this.extractBearerToken(socket.handshake.headers.authorization);

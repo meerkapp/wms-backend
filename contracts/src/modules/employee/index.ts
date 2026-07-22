@@ -7,7 +7,7 @@ export const EmployeeRoleSchema = EmployeeRoleModelSchema
   .extend({ id: z.number(), updatedAt: z.string() })
 
 export const EmployeeSchema = EmployeeModelSchema
-  .omit({ password: true, warehouse: true, roleAssignments: true })
+  .omit({ password: true, warehouse: true, roleAssignments: true, productFavorites: true })
   .extend({
     avatarUrl: z.string().nullable(),
     phone: z.string().nullable(),

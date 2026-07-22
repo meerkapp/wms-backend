@@ -94,4 +94,15 @@ describe('SyncGateway room routing', () => {
     expect(to).not.toHaveBeenCalledWith('authenticated');
     expect(emit).toHaveBeenCalledWith('sync:organization', payload);
   });
+
+  it('routes account events only to the selected user room', () => {
+    const { gateway, to, emit } = createGateway();
+    const change = { productItemId: 7, isFavorite: true };
+
+    gateway.emitUserEvent('product-item-favorite:changed', 'employee-id', change);
+
+    expect(to).toHaveBeenCalledWith('user:employee-id');
+    expect(to).not.toHaveBeenCalledWith('authenticated');
+    expect(emit).toHaveBeenCalledWith('product-item-favorite:changed', change);
+  });
 });

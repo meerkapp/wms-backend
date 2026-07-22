@@ -283,15 +283,16 @@ model ProductItem {
   isPublic            Boolean           @default(false) @map("is_public")
   updatedAt           DateTime          @updatedAt @map("updated_at")
 
-  productCollection ProductCollection? @relation(fields: [productCollectionId], references: [id], onDelete: SetNull)
-  productType       ProductType        @relation(fields: [productTypeId], references: [id])
-  productBrand      ProductBrand?      @relation(fields: [productBrandId], references: [id], onDelete: SetNull)
-  productMeasure    ProductMeasure     @relation(fields: [productMeasureId], references: [id], onDelete: Restrict)
-  country           Country?           @relation(fields: [countryId], references: [id], onDelete: SetNull)
+  productCollection ProductCollection?    @relation(fields: [productCollectionId], references: [id], onDelete: SetNull)
+  productType       ProductType           @relation(fields: [productTypeId], references: [id])
+  productBrand      ProductBrand?         @relation(fields: [productBrandId], references: [id], onDelete: SetNull)
+  productMeasure    ProductMeasure        @relation(fields: [productMeasureId], references: [id], onDelete: Restrict)
+  country           Country?              @relation(fields: [countryId], references: [id], onDelete: SetNull)
   barcodes          ProductBarcode[]
   packages          ProductPackage[]
   shipments         ProductShipment[]
   stats             ProductItemStats[]
+  favorites         ProductItemFavorite[]
 
   @@index([productCollectionId])
   @@index([productTypeId])
@@ -429,10 +430,24 @@ model Employee {
   lastSeen    DateTime? @map("last_seen")
   updatedAt   DateTime  @updatedAt @map("updated_at")
 
-  warehouse       Warehouse?               @relation(fields: [warehouseId], references: [id])
-  roleAssignments EmployeeRoleAssignment[]
+  warehouse        Warehouse?               @relation(fields: [warehouseId], references: [id])
+  roleAssignments  EmployeeRoleAssignment[]
+  productFavorites ProductItemFavorite[]
 
   @@map("employee")
+}
+
+model ProductItemFavorite {
+  employeeId    String   @map("employee_id") @db.Uuid
+  productItemId Int      @map("product_item_id")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  employee    Employee    @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  productItem ProductItem @relation(fields: [productItemId], references: [id], onDelete: Cascade)
+
+  @@id([employeeId, productItemId])
+  @@index([productItemId])
+  @@map("product_item_favorite")
 }
 
 model EmployeeRole {

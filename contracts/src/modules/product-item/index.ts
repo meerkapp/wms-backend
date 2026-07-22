@@ -3,6 +3,7 @@ import { ProductItemModelSchema } from '../../generated/schemas/variants/pure/Pr
 import { ProductBrandSchema } from '../product-brand';
 import { ProductMeasureSchema } from '../product-measure';
 import { CurrencyCodeSchema } from '../../common/currency';
+import type { Paginated } from '../../common/pagination';
 import {
   createSyncChangePayloadSchema,
   createSyncFetchResponseSchema,
@@ -22,6 +23,7 @@ export const ProductItemSchema = ProductItemModelSchema.omit({
   packages: true,
   shipments: true,
   stats: true,
+  favorites: true,
 }).extend({ updatedAt: z.string() });
 
 export const ProductItemWithRelationsSchema = ProductItemSchema.extend({
@@ -58,6 +60,25 @@ export const ProductItemStatsChangePayloadSchema =
 export const ProductItemStatsSocketPayloadSchema =
   createSyncSocketPayloadSchema(ProductItemStatsSchema);
 
+export const ProductItemFavoriteSchema = z.object({
+  productItemId: z.number().int().positive(),
+  createdAt: z.string(),
+});
+
+export const PRODUCT_ITEM_FAVORITE_CHANGED_EVENT = 'product-item-favorite:changed' as const;
+export const ProductItemFavoriteChangeSchema = z.discriminatedUnion('isFavorite', [
+  z.object({
+    productItemId: z.number().int().positive(),
+    isFavorite: z.literal(true),
+    createdAt: z.string(),
+  }),
+  z.object({
+    productItemId: z.number().int().positive(),
+    isFavorite: z.literal(false),
+    createdAt: z.null(),
+  }),
+]);
+
 export type ProductItem = z.infer<typeof ProductItemSchema>;
 export type ProductItemWithRelations = z.infer<typeof ProductItemWithRelationsSchema>;
 export type ProductItemStatsQuery = z.infer<typeof ProductItemStatsQuerySchema>;
@@ -66,3 +87,6 @@ export type ProductItemStats = z.infer<typeof ProductItemStatsSchema>;
 export type ProductItemStatsFetchResponse = SyncFetchResponse<ProductItemStats>;
 export type ProductItemStatsChangePayload = SyncChangePayload<ProductItemStats>;
 export type ProductItemStatsSocketPayload = SyncSocketPayload<ProductItemStats>;
+export type ProductItemFavorite = z.infer<typeof ProductItemFavoriteSchema>;
+export type ProductItemFavoritePage = Paginated<ProductItemFavorite>;
+export type ProductItemFavoriteChange = z.infer<typeof ProductItemFavoriteChangeSchema>;
