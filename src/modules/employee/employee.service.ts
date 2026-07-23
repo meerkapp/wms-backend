@@ -67,6 +67,8 @@ function hasValidAvatarSignature(file: Express.Multer.File): boolean {
 
 const PROTECTED_ROLE_NAME = 'superadmin';
 
+type EmployeeWithAvatar = { avatarUrl: string | null };
+
 @Injectable()
 export class EmployeeService {
   constructor(
@@ -84,7 +86,7 @@ export class EmployeeService {
     await this.assertProtectedRoleBoundary(actorId, { roleIds });
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    return this.prisma.$transaction(async (tx) => {
+    const employee = await this.prisma.$transaction(async (tx) => {
       const employee = await tx.employee.create({
         data: { ...employeeData, password: hashedPassword },
       });
@@ -103,6 +105,8 @@ export class EmployeeService {
         select: EMPLOYEE_SELECT,
       });
     });
+
+    return this.withPublicAvatar(employee);
   }
 
   async findAll(page: number = 1, limit: number = 20) {
@@ -119,7 +123,7 @@ export class EmployeeService {
     ]);
 
     return {
-      items,
+      items: items.map((employee) => this.withPublicAvatar(employee)),
       total,
       page,
       limit,
@@ -133,7 +137,7 @@ export class EmployeeService {
       select: EMPLOYEE_SELECT,
     });
     if (!employee) throw new NotFoundException(`Employee ${id} not found`);
-    return employee;
+    return this.withPublicAvatar(employee);
   }
 
   async update(id: string, dto: UpdateEmployeeDto, permissions: string[], actorId: string) {
@@ -163,7 +167,7 @@ export class EmployeeService {
       throw new ForbiddenException('No permission to toggle employee active status');
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const employee = await this.prisma.$transaction(async (tx) => {
       const employee = await tx.employee.findUnique({ where: { id } });
       if (!employee) throw new NotFoundException(`Employee ${id} not found`);
 
@@ -199,6 +203,8 @@ export class EmployeeService {
 
       return tx.employee.findUniqueOrThrow({ where: { id }, select: EMPLOYEE_SELECT });
     });
+
+    return this.withPublicAvatar(employee);
   }
 
   async updateOwnProfile(id: string, dto: UpdateOwnProfileDto, permissions: string[]) {
@@ -230,11 +236,13 @@ export class EmployeeService {
       return this.findOne(id);
     }
 
-    return this.prisma.employee.update({
+    const employee = await this.prisma.employee.update({
       where: { id },
       data: dataToUpdate,
       select: EMPLOYEE_SELECT,
     });
+
+    return this.withPublicAvatar(employee);
   }
 
   async updateOwnPassword(id: string, dto: UpdateOwnPasswordDto) {
@@ -282,7 +290,7 @@ export class EmployeeService {
     }
 
     if (employee.avatarUrl) {
-      const oldKey = employee.avatarUrl.split(`/${this.storage.bucket}/`)[1];
+      const oldKey = this.storage.getObjectKey(employee.avatarUrl);
       if (oldKey) await this.storage.delete(oldKey);
     }
 
@@ -301,11 +309,18 @@ export class EmployeeService {
     });
 
     if (employee.avatarUrl) {
-      const key = employee.avatarUrl.split(`/${this.storage.bucket}/`)[1];
+      const key = this.storage.getObjectKey(employee.avatarUrl);
       if (key) await this.storage.delete(key);
     }
 
     return { avatarUrl: null };
+  }
+
+  private withPublicAvatar<T extends EmployeeWithAvatar>(employee: T): T {
+    return {
+      ...employee,
+      avatarUrl: this.storage.normalizePublicUrl(employee.avatarUrl),
+    };
   }
 
   private async assertProtectedRoleBoundary(

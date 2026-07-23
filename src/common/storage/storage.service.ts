@@ -1,24 +1,21 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import {
-  S3Client,
-  PutObjectCommand,
-  DeleteObjectCommand,
-} from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 
 @Injectable()
 export class StorageService {
   private readonly client: S3Client;
   readonly bucket: string;
-  private readonly endpoint: string;
+  private readonly publicUrl: string;
   private readonly logger = new Logger(StorageService.name);
 
   constructor(private readonly configService: ConfigService) {
-    this.endpoint = configService.getOrThrow<string>('S3_ENDPOINT');
+    const endpoint = this.trimTrailingSlash(configService.getOrThrow<string>('S3_ENDPOINT'));
+    this.publicUrl = this.trimTrailingSlash(configService.getOrThrow<string>('S3_PUBLIC_URL'));
     this.bucket = configService.getOrThrow<string>('S3_BUCKET');
 
     this.client = new S3Client({
-      endpoint: this.endpoint,
+      endpoint,
       region: configService.getOrThrow<string>('S3_REGION'),
       credentials: {
         accessKeyId: configService.getOrThrow<string>('S3_ACCESS_KEY'),
@@ -38,7 +35,7 @@ export class StorageService {
       }),
     );
 
-    return `${this.endpoint}/${this.bucket}/${key}`;
+    return this.getPublicUrl(key);
   }
 
   async delete(key: string): Promise<void> {
@@ -52,5 +49,29 @@ export class StorageService {
     } catch (error) {
       this.logger.warn(`Failed to delete object ${key}: ${error}`);
     }
+  }
+
+  getPublicUrl(key: string): string {
+    return `${this.publicUrl}/${this.bucket}/${key}`;
+  }
+
+  normalizePublicUrl(url: string | null): string | null {
+    if (url === null) return null;
+
+    const key = this.getObjectKey(url);
+    return key === null ? url : this.getPublicUrl(key);
+  }
+
+  getObjectKey(url: string): string | null {
+    const bucketMarker = `/${this.bucket}/`;
+    const markerIndex = url.indexOf(bucketMarker);
+    if (markerIndex === -1) return null;
+
+    const key = url.slice(markerIndex + bucketMarker.length);
+    return key.length > 0 ? key : null;
+  }
+
+  private trimTrailingSlash(value: string): string {
+    return value.replace(/\/+$/, '');
   }
 }

@@ -36,16 +36,6 @@ export async function createApp(
 export async function seedAdmin(app: INestApplication): Promise<{ access_token: string }> {
   // Re-sync permissions/superadmin role in case cleanDatabase wiped them
   await app.get(PermissionsSyncService).sync();
-  await app.get(PrismaService).country.upsert({
-    where: { code: 'AU' },
-    update: {},
-    create: { code: 'AU' },
-  });
-  await app.get(PrismaService).productMeasure.upsert({
-    where: { code: 'pcs' },
-    update: {},
-    create: { code: 'pcs' },
-  });
   const res = await request(app.getHttpServer()).post('/api/setup/init').send(ADMIN).expect(201);
   return res.body as { access_token: string };
 }

@@ -108,6 +108,8 @@ const testEnv = {
   NODE_ENV: 'test',
   DATABASE_URL: target.toString(),
   REDIS_DB: testRedisDb,
+  S3_PUBLIC_URL:
+    process.env.S3_PUBLIC_URL ?? readEnvValue('S3_PUBLIC_URL') ?? 'http://localhost:9000',
 };
 
 run('prisma', ['migrate', 'deploy'], testEnv);

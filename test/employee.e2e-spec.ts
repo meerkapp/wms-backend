@@ -13,10 +13,14 @@ const TINY_PNG = Buffer.from(
 );
 
 const avatarUrlForKey = (key: string) => `http://minio:9000/test-bucket/${key}`;
+const publicAvatarUrl = (url: string | null) =>
+  url?.replace('http://minio:9000', '/storage') ?? null;
 
 const mockStorage = {
   upload: jest.fn((key: string) => Promise.resolve(avatarUrlForKey(key))),
   delete: jest.fn().mockResolvedValue(undefined),
+  normalizePublicUrl: jest.fn(publicAvatarUrl),
+  getObjectKey: jest.fn((url: string) => url.split('/test-bucket/')[1] ?? null),
   bucket: 'test-bucket',
 };
 
@@ -254,6 +258,26 @@ describe('Employee (e2e)', () => {
 
       expect(res.body).toMatchObject({ id: targetEmployeeId, email: 'target@e2e.test' });
       expect(res.body).not.toHaveProperty('password');
+    });
+
+    it('returns a public URL for a legacy internally-addressed avatar', async () => {
+      const oldKey = `avatars/${targetEmployeeId}/legacy.png`;
+      await prisma.employee.update({
+        where: { id: targetEmployeeId },
+        data: { avatarUrl: avatarUrlForKey(oldKey) },
+      });
+
+      const res = await request(app.getHttpServer())
+        .get(`/api/employee/${targetEmployeeId}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+
+      expect(res.body.avatarUrl).toBe(`/storage/test-bucket/${oldKey}`);
+
+      await prisma.employee.update({
+        where: { id: targetEmployeeId },
+        data: { avatarUrl: null },
+      });
     });
 
     it('returns 404 for non-existent id', async () => {

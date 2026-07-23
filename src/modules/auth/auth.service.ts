@@ -6,6 +6,7 @@ import * as bcrypt from 'bcrypt';
 import { Response } from 'express';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { RedisService } from '../../common/redis/redis.service';
+import { StorageService } from '../../common/storage/storage.service';
 import {
   DEVICE_SESSION_COOKIE,
   DEVICE_SESSION_TTL_MS,
@@ -48,6 +49,7 @@ export class AuthService {
     private readonly redisService: RedisService,
     private readonly configService: ConfigService,
     private readonly deviceSessionService: DeviceSessionService,
+    private readonly storage: StorageService,
   ) {}
 
   async login(dto: LoginDto, deviceSessionId?: string): Promise<AuthSessionResult> {
@@ -134,7 +136,7 @@ export class AuthService {
         accountId: employee.id,
         firstName: employee.firstName,
         lastName: employee.lastName,
-        avatarUrl: employee.avatarUrl,
+        avatarUrl: this.storage.normalizePublicUrl(employee.avatarUrl),
         warehouseId: employee.warehouseId,
       }))
       .sort((left, right) =>
@@ -215,7 +217,7 @@ export class AuthService {
       email: employee.email,
       firstName: employee.firstName,
       lastName: employee.lastName,
-      avatarUrl: employee.avatarUrl,
+      avatarUrl: this.storage.normalizePublicUrl(employee.avatarUrl),
       warehouseId: employee.warehouseId,
       isActive: employee.isActive,
       permissions,
