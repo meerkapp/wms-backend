@@ -1,6 +1,6 @@
 {
   "name": "@meerkapp/wms-backend",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Meerk warehouse management system backend",
   "private": false,
   "type": "commonjs",
