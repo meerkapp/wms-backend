@@ -17,7 +17,7 @@ import * as cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 import { DEVICE_SESSION_COOKIE } from './modules/auth/device-session.service';
 
-async function bootstrap() {
+export async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const configService = app.get(ConfigService);
 
@@ -49,4 +49,7 @@ async function bootstrap() {
   const port = configService.get<number>('APP_PORT') ?? 3000;
   await app.listen(port);
 }
-bootstrap();
+
+if (require.main === module) {
+  void bootstrap();
+}

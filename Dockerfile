@@ -6,8 +6,9 @@ ARG FRONTEND_URL=https://github.com/meerkapp/wms-frontend/releases/latest/downlo
 
 RUN apk add --no-cache curl unzip ca-certificates \
     && curl -fSL ${FRONTEND_URL} -o frontend.zip \
-    && unzip frontend.zip -d dist \
-    && rm frontend.zip
+    && unzip frontend.zip \
+    && rm frontend.zip \
+    && test -f dist/index.html
 
 # Stage 2: Build NestJS
 FROM node:22-alpine AS builder
@@ -22,8 +23,9 @@ RUN pnpm install --frozen-lockfile
 COPY . .
 RUN pnpm prisma generate
 RUN pnpm --filter @meerkapp/wms-contracts build
-RUN pnpm build
+RUN pnpm build && test -f dist/main.js
 RUN pnpm prune --prod --config.confirmModulesPurge=false
+RUN node -e "require('./dist/main.js')"
 
 # Stage 3: Production runner
 FROM node:22-alpine AS runner

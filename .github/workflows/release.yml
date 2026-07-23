@@ -46,6 +46,8 @@ jobs:
         with:
           context: .
           push: true
+          build-args: |
+            FRONTEND_URL=https://github.com/meerkapp/wms-frontend/releases/download/${{ github.ref_name }}/meerk-wms-frontend.zip
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
