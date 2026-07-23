@@ -52,6 +52,7 @@ jobs:
           cache-to: type=gha,mode=max
 
   publish-contracts:
+    if: "startsWith(github.ref_name, 'contracts-v')"
     runs-on: ubuntu-latest
     permissions:
       contents: read
