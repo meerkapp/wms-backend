@@ -18,6 +18,7 @@ describe('Product item archive (e2e)', () => {
   let zeroStockPackageId: number;
   let zeroStockShipmentId: number;
   let zeroStockStatsId: number;
+  let warehouseId: number;
 
   beforeAll(async () => {
     app = await createApp();
@@ -57,6 +58,7 @@ describe('Product item archive (e2e)', () => {
         organizationId: organization.id,
       },
     });
+    warehouseId = warehouse.id;
     const productType = await prisma.productType.findFirstOrThrow();
     const productMeasure = await prisma.productMeasure.findUniqueOrThrow({
       where: { code: 'pcs' },
@@ -121,8 +123,8 @@ describe('Product item archive (e2e)', () => {
       where: { id: { in: [zeroStockProductId, stockedProductId] } },
       data: { archivedAt: null, archivedByEmployeeId: null },
     });
-    await prisma.productItemStats.update({
-      where: { id: zeroStockStatsId },
+    await prisma.productShipment.update({
+      where: { id: zeroStockShipmentId },
       data: { quantity: 0 },
     });
   });
@@ -182,9 +184,9 @@ describe('Product item archive (e2e)', () => {
     ).toMatchObject({ archivedAt: null, archivedByEmployeeId: null });
   });
 
-  it('rejects archiving when an aggregate stock balance is negative', async () => {
-    await prisma.productItemStats.update({
-      where: { id: zeroStockStatsId },
+  it('rejects archiving when the actual stock balance is negative', async () => {
+    await prisma.productShipment.update({
+      where: { id: zeroStockShipmentId },
       data: { quantity: '-1' },
     });
 
@@ -196,6 +198,33 @@ describe('Product item archive (e2e)', () => {
     expect(
       await prisma.productItem.findUniqueOrThrow({ where: { id: zeroStockProductId } }),
     ).toMatchObject({ archivedAt: null, archivedByEmployeeId: null });
+  });
+
+  it('maintains the aggregate across concurrent shipment mutations', async () => {
+    const shipments = await Promise.all(
+      Array.from({ length: 12 }, () =>
+        prisma.productShipment.create({
+          data: {
+            warehouseId,
+            productItemId: zeroStockProductId,
+            arrivalDate: new Date(),
+            quantity: '1',
+          },
+        }),
+      ),
+    );
+
+    const afterInsert = await prisma.productItemStats.findUniqueOrThrow({
+      where: { id: zeroStockStatsId },
+    });
+    expect(afterInsert.quantity.toString()).toBe('12');
+
+    await Promise.all(shipments.map(({ id }) => prisma.productShipment.delete({ where: { id } })));
+
+    const afterDelete = await prisma.productItemStats.findUniqueOrThrow({
+      where: { id: zeroStockStatsId },
+    });
+    expect(afterDelete.quantity.toString()).toBe('0');
   });
 
   it('rejects new stock for an archived product at the database boundary', async () => {

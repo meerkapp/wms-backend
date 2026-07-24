@@ -94,11 +94,15 @@ export class ProductItemService {
       if (!productItem) throw new NotFoundException(`Product item ${productItemId} not found`);
       if (productItem.archivedAt !== null) return this.serializeProductItem(productItem);
 
-      const nonZeroStats = await tx.productItemStats.findFirst({
-        where: { productItemId, quantity: { not: 0 } },
-        select: { id: true },
-      });
-      if (nonZeroStats) {
+      const nonZeroBalances = await tx.$queryRaw<Array<{ warehouseId: number }>>(Prisma.sql`
+        SELECT warehouse_id AS "warehouseId"
+        FROM product_shipment
+        WHERE product_item_id = ${productItemId}
+        GROUP BY warehouse_id
+        HAVING COALESCE(SUM(quantity), 0) <> 0
+        LIMIT 1
+      `);
+      if (nonZeroBalances.length > 0) {
         throw new ConflictException('Product item stock balance is not zero');
       }
 
