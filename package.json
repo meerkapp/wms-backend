@@ -45,6 +45,7 @@
     "@nestjs/platform-socket.io": "^11.1.16",
     "@nestjs/serve-static": "^5.0.4",
     "@nestjs/swagger": "^11.2.6",
+    "@nestjs/throttler": "^6.5.0",
     "@nestjs/websockets": "^11.1.16",
     "@prisma/client": "^6.19.2",
     "@scalar/nestjs-api-reference": "^1.1.2",

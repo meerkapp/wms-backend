@@ -318,4 +318,27 @@ describe('Auth (e2e)', () => {
       await request(app.getHttpServer()).post('/api/auth/logout').expect(401);
     });
   });
+
+  describe('POST /api/auth/login rate limiting', () => {
+    it('blocks repeated attempts for the same normalized email', async () => {
+      const email = 'rate-limited-account@test.com';
+
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        await request(app.getHttpServer())
+          .post('/api/auth/login')
+          .send({
+            email: attempt % 2 === 0 ? email : email.toUpperCase(),
+            password: 'WrongPassword!',
+          })
+          .expect(401);
+      }
+
+      const blocked = await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .send({ email, password: 'WrongPassword!' })
+        .expect(429);
+
+      expect(blocked.headers['retry-after-login-account']).toBeDefined();
+    });
+  });
 });

@@ -6,7 +6,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { JwtPayload } from '../auth/strategies/jwt.strategy';
 import { SyncEventScope, SyncSocketPayload, SyncTableName } from './sync.types';
 
-@WebSocketGateway({ cors: { origin: process.env.FRONT_END_DOMAIN } })
+@WebSocketGateway()
 export class SyncGateway implements OnGatewayConnection {
   @WebSocketServer()
   declare server: Server;

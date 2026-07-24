@@ -14,7 +14,7 @@ import { PresenceService } from './presence.service';
 // Authenticate via handshake auth: io(url, { auth: { token } })
 // Heartbeat event extends online TTL, emit every ~2 min
 
-@WebSocketGateway({ cors: { origin: process.env.FRONT_END_DOMAIN } })
+@WebSocketGateway()
 export class PresenceGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   declare server: Server;
@@ -76,7 +76,11 @@ export class PresenceGateway implements OnGatewayConnection, OnGatewayDisconnect
         this.userSockets.delete(userId);
         const lastSeen = await this.presenceService.setOffline(userId);
         if (lastSeen) {
-          this.notifyAll({ employeeId: userId, status: 'offline', lastSeen: lastSeen.toISOString() });
+          this.notifyAll({
+            employeeId: userId,
+            status: 'offline',
+            lastSeen: lastSeen.toISOString(),
+          });
         }
       }
     }

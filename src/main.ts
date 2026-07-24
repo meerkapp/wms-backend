@@ -9,17 +9,23 @@ BigInt.prototype.toJSON = function () {
 };
 
 import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ZodValidationPipe } from 'nestjs-zod';
 import { ConfigService } from '@nestjs/config';
 import { apiReference } from '@scalar/nestjs-api-reference';
 import * as cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
+import { ConfiguredSocketIoAdapter } from './common/websocket/configured-socket-io.adapter';
 import { DEVICE_SESSION_COOKIE } from './modules/auth/device-session.service';
 
 export async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
   const configService = app.get(ConfigService);
+
+  if (configService.get<string>('TRUST_PROXY') === 'true') {
+    app.set('trust proxy', 1);
+  }
 
   app.use(cookieParser());
   app.setGlobalPrefix('api');
@@ -32,6 +38,7 @@ export async function bootstrap() {
     origin: frontendOrigin,
     credentials: true,
   });
+  app.useWebSocketAdapter(new ConfiguredSocketIoAdapter(app, frontendOrigin));
 
   if (configService.get('IS_DOCS_ENABLED') === 'true') {
     const config = new DocumentBuilder()

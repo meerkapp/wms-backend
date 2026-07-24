@@ -108,6 +108,12 @@ const testEnv = {
   NODE_ENV: 'test',
   DATABASE_URL: target.toString(),
   REDIS_DB: testRedisDb,
+  AUTH_LOGIN_IP_LIMIT: '100',
+  AUTH_LOGIN_IP_TTL_MS: '60000',
+  AUTH_LOGIN_IP_BLOCK_MS: '300000',
+  AUTH_LOGIN_ACCOUNT_LIMIT: '20',
+  AUTH_LOGIN_ACCOUNT_TTL_MS: '300000',
+  AUTH_LOGIN_ACCOUNT_BLOCK_MS: '900000',
   S3_PUBLIC_URL:
     process.env.S3_PUBLIC_URL ?? readEnvValue('S3_PUBLIC_URL') ?? 'http://localhost:9000',
 };
