@@ -28,21 +28,40 @@ describe('Setup (e2e)', () => {
   });
 
   describe('POST /api/setup/init', () => {
-    it('creates first admin, installation defaults, and starts a device session', async () => {
-      const res = await request(app.getHttpServer())
+    it('rejects an invalid initialization payload', async () => {
+      await request(app.getHttpServer())
         .post('/api/setup/init')
-        .send(ADMIN)
-        .expect(201);
+        .send({ email: 'invalid', password: 'short', firstName: '', lastName: '' })
+        .expect(400);
+    });
+
+    it('serializes concurrent initialization attempts', async () => {
+      const attempts = await Promise.all([
+        request(app.getHttpServer()).post('/api/setup/init').send(ADMIN),
+        request(app.getHttpServer()).post('/api/setup/init').send({
+          email: 'other-admin@test.com',
+          password: 'Other1234!',
+          firstName: 'Other',
+          lastName: 'Admin',
+        }),
+      ]);
+
+      expect(attempts.map(({ status }) => status).sort()).toEqual([201, 403]);
+      const res = attempts.find(({ status }) => status === 201);
+      expect(res).toBeDefined();
+      if (!res) throw new Error('Expected one successful setup response');
 
       expect(res.body).toHaveProperty('access_token');
       expect(extractCookie(res, 'device_session')).toBeDefined();
 
-      const [productTypes, defaultPriceLists, settings] = await Promise.all([
+      const [employees, productTypes, defaultPriceLists, settings] = await Promise.all([
+        prisma.employee.findMany(),
         prisma.productType.findMany(),
         prisma.priceList.findMany({ where: { isDefault: true } }),
         prisma.serverSettings.findUnique({ where: { id: 1 } }),
       ]);
 
+      expect(employees).toHaveLength(1);
       expect(productTypes).toHaveLength(1);
       expect(productTypes[0]).toMatchObject({
         name: 'Default',

@@ -1,8 +1,11 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { AuthService, AuthSessionResult } from '../auth/auth.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { InitDto } from './dto/init.dto';
+
+const SETUP_ADVISORY_LOCK_ID = 918273645;
 
 @Injectable()
 export class SetupService {
@@ -19,16 +22,22 @@ export class SetupService {
   }
 
   async init(dto: InitDto): Promise<AuthSessionResult> {
-    const settings = await this.prisma.serverSettings.findUnique({
-      where: { id: 1 },
-    });
-    if (settings?.setupCompleted) {
-      throw new ForbiddenException('Setup has already been completed');
-    }
-
     const hashedPassword = await bcrypt.hash(dto.password, 10);
 
     const employee = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw(
+        Prisma.sql`
+          SELECT pg_advisory_xact_lock(${SETUP_ADVISORY_LOCK_ID}::bigint)::text AS lock_result
+        `,
+      );
+
+      const settings = await tx.serverSettings.findUnique({
+        where: { id: 1 },
+      });
+      if (settings?.setupCompleted) {
+        throw new ForbiddenException('Setup has already been completed');
+      }
+
       const adminRole = await tx.employeeRole.findUniqueOrThrow({
         where: { name: 'superadmin' },
       });

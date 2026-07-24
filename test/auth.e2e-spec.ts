@@ -27,6 +27,13 @@ describe('Auth (e2e)', () => {
   });
 
   describe('POST /api/auth/login', () => {
+    it('rejects a payload that does not satisfy the shared contract', async () => {
+      await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .send({ email: 'not-an-email', password: '' })
+        .expect(400);
+    });
+
     it('returns an access token and adds the account to the device session', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/auth/login')
