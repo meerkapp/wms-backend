@@ -35,10 +35,18 @@ describe('Employee (e2e)', () => {
   const uniqueEmail = (prefix = 'user') => `${prefix}-${++counter}@e2e.test`;
 
   // Creates an employee with the given permissions and returns their access token.
-  async function tokenFor(permissions: string[], email = uniqueEmail('limited')): Promise<string> {
+  async function tokenFor(
+    permissions: string[],
+    email = uniqueEmail('limited'),
+    position = 1_000_000 - counter,
+  ): Promise<string> {
     const password = 'Test1234!';
     const role = await prisma.employeeRole.create({
-      data: { name: `role-${Date.now()}-${counter}`, color: '#aaaaaa' },
+      data: {
+        name: `role-${Date.now()}-${counter}`,
+        color: '#aaaaaa',
+        position,
+      },
     });
 
     if (permissions.length > 0) {
@@ -222,6 +230,63 @@ describe('Employee (e2e)', () => {
           roleIds: [superadminRole.id],
         })
         .expect(403);
+    });
+
+    it('does not let an employee assign a role with permissions they do not have', async () => {
+      const token = await tokenFor(['employee:create']);
+      const roleUpdatePermission = await prisma.employeePermission.findUniqueOrThrow({
+        where: { name: 'role:update' },
+      });
+      const strongerRole = await prisma.employeeRole.create({
+        data: {
+          name: `stronger-role-${Date.now()}-${counter}`,
+          color: '#ff0000',
+          permissions: {
+            create: { employeePermissionId: roleUpdatePermission.id },
+          },
+        },
+      });
+      const email = uniqueEmail('role-escalation');
+
+      await request(app.getHttpServer())
+        .post('/api/employee')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          email,
+          password: 'Test1234!',
+          firstName: 'Escalation',
+          lastName: 'Attempt',
+          roleIds: [strongerRole.id],
+        })
+        .expect(403);
+
+      expect(await prisma.employee.findUnique({ where: { email } })).toBeNull();
+    });
+
+    it('does not let an employee assign a role at or above their highest role', async () => {
+      const token = await tokenFor(['employee:create']);
+      const higherRole = await prisma.employeeRole.create({
+        data: {
+          name: `higher-role-${Date.now()}-${counter}`,
+          color: '#ff0000',
+          position: 1_500_000,
+        },
+      });
+      const email = uniqueEmail('higher-role');
+
+      await request(app.getHttpServer())
+        .post('/api/employee')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          email,
+          password: 'Test1234!',
+          firstName: 'Hierarchy',
+          lastName: 'Attempt',
+          roleIds: [higherRole.id],
+        })
+        .expect(403);
+
+      expect(await prisma.employee.findUnique({ where: { email } })).toBeNull();
     });
   });
 
@@ -519,6 +584,28 @@ describe('Employee (e2e)', () => {
         .expect(403);
     });
 
+    it('revalidates field permissions after they are revoked from an issued token', async () => {
+      const actorEmail = uniqueEmail('revoked-info');
+      const token = await tokenFor(['employee:update:info'], actorEmail);
+      const actor = await prisma.employee.findUniqueOrThrow({
+        where: { email: actorEmail },
+        include: { roleAssignments: true },
+      });
+      await prisma.employeeRolePermission.deleteMany({
+        where: { employeeRoleId: actor.roleAssignments[0]!.employeeRoleId },
+      });
+
+      await request(app.getHttpServer())
+        .patch(`/api/employee/${targetEmployeeId}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ firstName: 'StaleTokenUpdate' })
+        .expect(403);
+
+      expect(
+        await prisma.employee.findUniqueOrThrow({ where: { id: targetEmployeeId } }),
+      ).toMatchObject({ firstName: 'UpdatedTarget' });
+    });
+
     it('does not let a non-superadmin change a protected account', async () => {
       const token = await tokenFor(['employee:update:password']);
       await request(app.getHttpServer())
@@ -526,6 +613,41 @@ describe('Employee (e2e)', () => {
         .set('Authorization', `Bearer ${token}`)
         .send({ newPassword: 'Compromised123!' })
         .expect(403);
+    });
+
+    it('does not let an employee manage someone with an equal highest role', async () => {
+      const actorPosition = 500;
+      const token = await tokenFor(
+        ['employee:update:info'],
+        uniqueEmail('equal-role-actor'),
+        actorPosition,
+      );
+      const equalRole = await prisma.employeeRole.create({
+        data: {
+          name: `equal-target-role-${Date.now()}-${counter}`,
+          color: '#ff0000',
+          position: actorPosition,
+        },
+      });
+      const equalTarget = await prisma.employee.create({
+        data: {
+          email: uniqueEmail('equal-role-target'),
+          password: await bcrypt.hash('Test1234!', 10),
+          firstName: 'Equal',
+          lastName: 'Target',
+          roleAssignments: { create: { employeeRoleId: equalRole.id } },
+        },
+      });
+
+      await request(app.getHttpServer())
+        .patch(`/api/employee/${equalTarget.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ firstName: 'Forbidden' })
+        .expect(403);
+
+      expect(
+        await prisma.employee.findUniqueOrThrow({ where: { id: equalTarget.id } }),
+      ).toMatchObject({ firstName: 'Equal' });
     });
 
     it('syncs roles atomically when roleIds provided', async () => {
@@ -541,6 +663,29 @@ describe('Employee (e2e)', () => {
 
       expect(res.body.roleAssignments).toHaveLength(1);
       expect(res.body.roleAssignments[0].employeeRole.id).toBe(role.id);
+    });
+
+    it('keeps existing roles when one requested role does not exist', async () => {
+      const currentRole = await prisma.employeeRole.create({
+        data: { name: `current-role-${Date.now()}-${counter}`, color: '#00ff00' },
+      });
+      await prisma.employeeRoleAssignment.deleteMany({
+        where: { employeeId: targetEmployeeId },
+      });
+      await prisma.employeeRoleAssignment.create({
+        data: { employeeId: targetEmployeeId, employeeRoleId: currentRole.id },
+      });
+
+      await request(app.getHttpServer())
+        .patch(`/api/employee/${targetEmployeeId}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ roleIds: [currentRole.id, 2147483647] })
+        .expect(400);
+
+      const assignments = await prisma.employeeRoleAssignment.findMany({
+        where: { employeeId: targetEmployeeId },
+      });
+      expect(assignments.map(({ employeeRoleId }) => employeeRoleId)).toEqual([currentRole.id]);
     });
 
     it('clears roles when roleIds is empty array', async () => {
@@ -627,6 +772,26 @@ describe('Employee (e2e)', () => {
         .set('Authorization', `Bearer ${token}`)
         .attach('file', TINY_PNG, { filename: 'avatar.png', contentType: 'image/png' })
         .expect(403);
+    });
+
+    it('revalidates the avatar permission before uploading for another employee', async () => {
+      const actorEmail = uniqueEmail('revoked-avatar');
+      const token = await tokenFor(['employee:update:avatar'], actorEmail);
+      const actor = await prisma.employee.findUniqueOrThrow({
+        where: { email: actorEmail },
+        include: { roleAssignments: true },
+      });
+      await prisma.employeeRolePermission.deleteMany({
+        where: { employeeRoleId: actor.roleAssignments[0]!.employeeRoleId },
+      });
+
+      await request(app.getHttpServer())
+        .post(`/api/employee/${targetEmployeeId}/avatar`)
+        .set('Authorization', `Bearer ${token}`)
+        .attach('file', TINY_PNG, { filename: 'avatar.png', contentType: 'image/png' })
+        .expect(403);
+
+      expect(mockStorage.upload).not.toHaveBeenCalled();
     });
 
     it('returns 400 when no file is provided', async () => {

@@ -6,10 +6,12 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { StorageService } from '../../common/storage/storage.service';
+import { RoleHierarchyService } from '../role/role-hierarchy.service';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { UpdateEmployeeDto } from './dto/update-employee.dto';
 import { UpdateOwnPasswordDto, UpdateOwnProfileDto } from './dto/update-own-profile.dto';
@@ -32,6 +34,7 @@ const EMPLOYEE_SELECT = {
           id: true,
           name: true,
           color: true,
+          position: true,
         },
       },
     },
@@ -65,8 +68,6 @@ function hasValidAvatarSignature(file: Express.Multer.File): boolean {
   return false;
 }
 
-const PROTECTED_ROLE_NAME = 'superadmin';
-
 type EmployeeWithAvatar = { avatarUrl: string | null };
 
 @Injectable()
@@ -74,39 +75,46 @@ export class EmployeeService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
+    private readonly hierarchy: RoleHierarchyService,
   ) {}
 
   async create(dto: CreateEmployeeDto, actorId: string) {
-    const existing = await this.prisma.employee.findUnique({
-      where: { email: dto.email },
-    });
-    if (existing) throw new ConflictException('Email already in use');
-
     const { password, roleIds, ...employeeData } = dto;
-    await this.assertProtectedRoleBoundary(actorId, { roleIds });
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    const employee = await this.prisma.$transaction(async (tx) => {
-      const employee = await tx.employee.create({
-        data: { ...employeeData, password: hashedPassword },
-      });
+    try {
+      const employee = await this.prisma.$transaction(async (tx) => {
+        await this.hierarchy.lock(tx);
+        const actorAccess = await this.hierarchy.getActorAccess(tx, actorId);
+        this.hierarchy.assertCurrentPermission(actorAccess, 'employee:create');
+        await this.hierarchy.assertAssignableRoles(tx, roleIds ?? [], actorAccess);
 
-      if (roleIds?.length) {
-        await tx.employeeRoleAssignment.createMany({
-          data: roleIds.map((roleId) => ({
-            employeeId: employee.id,
-            employeeRoleId: roleId,
-          })),
+        const employee = await tx.employee.create({
+          data: { ...employeeData, password: hashedPassword },
         });
-      }
 
-      return tx.employee.findUniqueOrThrow({
-        where: { id: employee.id },
-        select: EMPLOYEE_SELECT,
+        if (roleIds?.length) {
+          await tx.employeeRoleAssignment.createMany({
+            data: roleIds.map((roleId) => ({
+              employeeId: employee.id,
+              employeeRoleId: roleId,
+            })),
+          });
+        }
+
+        return tx.employee.findUniqueOrThrow({
+          where: { id: employee.id },
+          select: EMPLOYEE_SELECT,
+        });
       });
-    });
 
-    return this.withPublicAvatar(employee);
+      return this.withPublicAvatar(employee);
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new ConflictException('Email already in use');
+      }
+      throw error;
+    }
   }
 
   async findAll(page: number = 1, limit: number = 20) {
@@ -143,68 +151,97 @@ export class EmployeeService {
   async update(id: string, dto: UpdateEmployeeDto, permissions: string[], actorId: string) {
     const { roleIds, newPassword, email, firstName, lastName, phone, warehouseId, isActive } = dto;
 
-    await this.assertProtectedRoleBoundary(actorId, { targetId: id, roleIds });
+    const permissionRequirements = [
+      {
+        applies: firstName !== undefined || lastName !== undefined || phone !== undefined,
+        permission: 'employee:update:info',
+        error: 'No permission to update info',
+      },
+      {
+        applies: warehouseId !== undefined,
+        permission: 'employee:update:warehouse',
+        error: 'No permission to update warehouse',
+      },
+      {
+        applies: roleIds !== undefined,
+        permission: 'employee:update:roles',
+        error: 'No permission to update roles',
+      },
+      {
+        applies: email !== undefined,
+        permission: 'employee:update:email',
+        error: 'No permission to update email',
+      },
+      {
+        applies: newPassword !== undefined,
+        permission: 'employee:update:password',
+        error: 'No permission to update password',
+      },
+      {
+        applies: isActive !== undefined,
+        permission: 'employee:toggle:active',
+        error: 'No permission to toggle employee active status',
+      },
+    ] as const;
 
-    if (
-      (firstName !== undefined || lastName !== undefined || phone !== undefined) &&
-      !permissions.includes('employee:update:info')
-    ) {
-      throw new ForbiddenException('No permission to update info');
-    }
-    if (warehouseId !== undefined && !permissions.includes('employee:update:warehouse')) {
-      throw new ForbiddenException('No permission to update warehouse');
-    }
-    if (roleIds !== undefined && !permissions.includes('employee:update:roles')) {
-      throw new ForbiddenException('No permission to update roles');
-    }
-    if (email !== undefined && !permissions.includes('employee:update:email')) {
-      throw new ForbiddenException('No permission to update email');
-    }
-    if (newPassword !== undefined && !permissions.includes('employee:update:password')) {
-      throw new ForbiddenException('No permission to update password');
-    }
-    if (isActive !== undefined && !permissions.includes('employee:toggle:active')) {
-      throw new ForbiddenException('No permission to toggle employee active status');
-    }
-
-    const employee = await this.prisma.$transaction(async (tx) => {
-      const employee = await tx.employee.findUnique({ where: { id } });
-      if (!employee) throw new NotFoundException(`Employee ${id} not found`);
-
-      const dataToUpdate: Record<string, unknown> = {};
-      if (firstName !== undefined) dataToUpdate.firstName = firstName;
-      if (lastName !== undefined) dataToUpdate.lastName = lastName;
-      if (phone !== undefined) dataToUpdate.phone = phone;
-      if (warehouseId !== undefined) dataToUpdate.warehouseId = warehouseId;
-      if (isActive !== undefined) dataToUpdate.isActive = isActive;
-
-      if (email !== undefined) {
-        const existing = await tx.employee.findUnique({ where: { email } });
-        if (existing && existing.id !== id) throw new ConflictException('Email already in use');
-        dataToUpdate.email = email;
+    for (const requirement of permissionRequirements) {
+      if (requirement.applies && !permissions.includes(requirement.permission)) {
+        throw new ForbiddenException(requirement.error);
       }
+    }
 
-      if (newPassword !== undefined) {
-        dataToUpdate.password = await bcrypt.hash(newPassword, 10);
-      }
+    const hashedNewPassword =
+      newPassword === undefined ? undefined : await bcrypt.hash(newPassword, 10);
 
-      if (Object.keys(dataToUpdate).length > 0) {
-        await tx.employee.update({ where: { id }, data: dataToUpdate });
-      }
-
-      if (roleIds !== undefined) {
-        await tx.employeeRoleAssignment.deleteMany({ where: { employeeId: id } });
-        if (roleIds.length > 0) {
-          await tx.employeeRoleAssignment.createMany({
-            data: roleIds.map((roleId) => ({ employeeId: id, employeeRoleId: roleId })),
-          });
+    try {
+      const employee = await this.prisma.$transaction(async (tx) => {
+        await this.hierarchy.lock(tx);
+        const actorAccess = await this.hierarchy.getActorAccess(tx, actorId);
+        await this.hierarchy.assertCanManageEmployee(tx, id, actorAccess);
+        for (const requirement of permissionRequirements) {
+          if (requirement.applies) {
+            this.hierarchy.assertCurrentPermission(actorAccess, requirement.permission);
+          }
         }
+        if (roleIds !== undefined) {
+          await this.hierarchy.assertAssignableRoles(tx, roleIds, actorAccess);
+        }
+
+        const employee = await tx.employee.findUnique({ where: { id } });
+        if (!employee) throw new NotFoundException(`Employee ${id} not found`);
+
+        const dataToUpdate: Record<string, unknown> = {};
+        if (firstName !== undefined) dataToUpdate.firstName = firstName;
+        if (lastName !== undefined) dataToUpdate.lastName = lastName;
+        if (phone !== undefined) dataToUpdate.phone = phone;
+        if (warehouseId !== undefined) dataToUpdate.warehouseId = warehouseId;
+        if (isActive !== undefined) dataToUpdate.isActive = isActive;
+        if (email !== undefined) dataToUpdate.email = email;
+        if (hashedNewPassword !== undefined) dataToUpdate.password = hashedNewPassword;
+
+        if (Object.keys(dataToUpdate).length > 0) {
+          await tx.employee.update({ where: { id }, data: dataToUpdate });
+        }
+
+        if (roleIds !== undefined) {
+          await tx.employeeRoleAssignment.deleteMany({ where: { employeeId: id } });
+          if (roleIds.length > 0) {
+            await tx.employeeRoleAssignment.createMany({
+              data: roleIds.map((roleId) => ({ employeeId: id, employeeRoleId: roleId })),
+            });
+          }
+        }
+
+        return tx.employee.findUniqueOrThrow({ where: { id }, select: EMPLOYEE_SELECT });
+      });
+
+      return this.withPublicAvatar(employee);
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new ConflictException('Email already in use');
       }
-
-      return tx.employee.findUniqueOrThrow({ where: { id }, select: EMPLOYEE_SELECT });
-    });
-
-    return this.withPublicAvatar(employee);
+      throw error;
+    }
   }
 
   async updateOwnProfile(id: string, dto: UpdateOwnProfileDto, permissions: string[]) {
@@ -266,7 +303,9 @@ export class EmployeeService {
     file: Express.Multer.File,
     actorId?: string,
   ): Promise<{ avatarUrl: string }> {
-    if (actorId) await this.assertProtectedRoleBoundary(actorId, { targetId: id });
+    if (actorId) {
+      await this.assertCanManageTarget(actorId, id);
+    }
 
     const employee = await this.prisma.employee.findUnique({ where: { id } });
     if (!employee) throw new NotFoundException(`Employee ${id} not found`);
@@ -280,9 +319,17 @@ export class EmployeeService {
     const avatarUrl = await this.storage.upload(key, file.buffer, file.mimetype);
 
     try {
-      await this.prisma.employee.update({
-        where: { id },
-        data: { avatarUrl },
+      await this.prisma.$transaction(async (tx) => {
+        if (actorId) {
+          await this.hierarchy.lock(tx);
+          const actorAccess = await this.hierarchy.getActorAccess(tx, actorId);
+          this.hierarchy.assertCurrentPermission(actorAccess, 'employee:update:avatar');
+          await this.hierarchy.assertCanManageEmployee(tx, id, actorAccess);
+        }
+        await tx.employee.update({
+          where: { id },
+          data: { avatarUrl },
+        });
       });
     } catch (error) {
       await this.storage.delete(key);
@@ -298,14 +345,21 @@ export class EmployeeService {
   }
 
   async deleteAvatar(id: string, actorId?: string): Promise<{ avatarUrl: null }> {
-    if (actorId) await this.assertProtectedRoleBoundary(actorId, { targetId: id });
+    const employee = await this.prisma.$transaction(async (tx) => {
+      if (actorId) {
+        await this.hierarchy.lock(tx);
+        const actorAccess = await this.hierarchy.getActorAccess(tx, actorId);
+        this.hierarchy.assertCurrentPermission(actorAccess, 'employee:update:avatar');
+        await this.hierarchy.assertCanManageEmployee(tx, id, actorAccess);
+      }
 
-    const employee = await this.prisma.employee.findUnique({ where: { id } });
-    if (!employee) throw new NotFoundException(`Employee ${id} not found`);
-
-    await this.prisma.employee.update({
-      where: { id },
-      data: { avatarUrl: null },
+      const employee = await tx.employee.findUnique({ where: { id } });
+      if (!employee) throw new NotFoundException(`Employee ${id} not found`);
+      await tx.employee.update({
+        where: { id },
+        data: { avatarUrl: null },
+      });
+      return employee;
     });
 
     if (employee.avatarUrl) {
@@ -323,39 +377,12 @@ export class EmployeeService {
     };
   }
 
-  private async assertProtectedRoleBoundary(
-    actorId: string,
-    { targetId, roleIds }: { targetId?: string; roleIds?: number[] },
-  ): Promise<void> {
-    const actorHasProtectedRole = await this.prisma.employeeRoleAssignment.findFirst({
-      where: {
-        employeeId: actorId,
-        employeeRole: { name: PROTECTED_ROLE_NAME },
-      },
-      select: { id: true },
+  private async assertCanManageTarget(actorId: string, targetId: string): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      await this.hierarchy.lock(tx);
+      const actorAccess = await this.hierarchy.getActorAccess(tx, actorId);
+      this.hierarchy.assertCurrentPermission(actorAccess, 'employee:update:avatar');
+      await this.hierarchy.assertCanManageEmployee(tx, targetId, actorAccess);
     });
-    if (actorHasProtectedRole) return;
-
-    const [targetHasProtectedRole, assignsProtectedRole] = await Promise.all([
-      targetId
-        ? this.prisma.employeeRoleAssignment.findFirst({
-            where: {
-              employeeId: targetId,
-              employeeRole: { name: PROTECTED_ROLE_NAME },
-            },
-            select: { id: true },
-          })
-        : null,
-      roleIds?.length
-        ? this.prisma.employeeRole.findFirst({
-            where: { id: { in: roleIds }, name: PROTECTED_ROLE_NAME },
-            select: { id: true },
-          })
-        : null,
-    ]);
-
-    if (targetHasProtectedRole || assignsProtectedRole) {
-      throw new ForbiddenException('Only a superadmin can manage protected accounts and roles');
-    }
   }
 }

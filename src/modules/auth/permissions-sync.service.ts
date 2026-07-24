@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { ALL_PERMISSIONS } from '@meerkapp/wms-contracts';
+import { SUPERADMIN_ROLE_POSITION } from '../role/role-hierarchy.constants';
 
 @Injectable()
 export class PermissionsSyncService implements OnModuleInit {
@@ -15,8 +16,12 @@ export class PermissionsSyncService implements OnModuleInit {
   async sync(): Promise<void> {
     const superadminRole = await this.prisma.employeeRole.upsert({
       where: { name: 'superadmin' },
-      update: {},
-      create: { name: 'superadmin', color: '#f43f5e' },
+      update: { position: SUPERADMIN_ROLE_POSITION },
+      create: {
+        name: 'superadmin',
+        color: '#f43f5e',
+        position: SUPERADMIN_ROLE_POSITION,
+      },
     });
 
     const existing = await this.prisma.employeePermission.findMany();

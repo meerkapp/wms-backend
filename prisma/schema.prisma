@@ -459,11 +459,13 @@ model EmployeeRole {
   id        Int      @id @default(autoincrement())
   name      String   @unique
   color     String
+  position  Int      @default(0)
   updatedAt DateTime @updatedAt @map("updated_at")
 
   assignments EmployeeRoleAssignment[]
   permissions EmployeeRolePermission[]
 
+  @@index([position])
   @@map("employee_role")
 }
 

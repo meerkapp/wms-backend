@@ -4,7 +4,7 @@ import { EmployeeRoleModelSchema } from '../../generated/schemas/variants/pure/E
 
 export const EmployeeRoleSchema = EmployeeRoleModelSchema
   .omit({ assignments: true, permissions: true })
-  .extend({ id: z.number(), updatedAt: z.string() })
+  .extend({ id: z.number(), position: z.number().int(), updatedAt: z.string() })
 
 export const EmployeeSchema = EmployeeModelSchema
   .omit({
@@ -36,7 +36,9 @@ export const CreateEmployeeSchema = z.object({
   lastName: z.string().min(1),
   phone: z.string().min(7).max(20).optional(),
   warehouseId: z.number().int().optional(),
-  roleIds: z.array(z.number().int()).optional(),
+  roleIds: z.array(z.number().int()).refine((ids) => new Set(ids).size === ids.length, {
+    message: 'Role IDs must be unique',
+  }).optional(),
 })
 
 export type CreateEmployeeDto = z.infer<typeof CreateEmployeeSchema>
@@ -46,7 +48,9 @@ export const UpdateEmployeeSchema = z.object({
   lastName: z.string().min(1).optional(),
   phone: z.string().min(7).max(20).nullable().optional(),
   warehouseId: z.number().int().nullable().optional(),
-  roleIds: z.array(z.number().int()).optional(),
+  roleIds: z.array(z.number().int()).refine((ids) => new Set(ids).size === ids.length, {
+    message: 'Role IDs must be unique',
+  }).optional(),
   email: z.string().email().optional(),
   newPassword: z.string().min(8).optional(),
   isActive: z.boolean().optional(),

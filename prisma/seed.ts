@@ -1,6 +1,8 @@
 import { PrismaClient } from '@prisma/client';
 import { ALL_PERMISSIONS } from '@meerkapp/wms-contracts';
 
+const SUPERADMIN_ROLE_POSITION = 2_000_000_000;
+
 const prisma = new PrismaClient();
 
 const COUNTRIES: string[] = [
@@ -284,8 +286,12 @@ async function main() {
 
   const adminRole = await prisma.employeeRole.upsert({
     where: { name: 'superadmin' },
-    update: { color: '#f43f5e' },
-    create: { name: 'superadmin', color: '#f43f5e' },
+    update: { color: '#f43f5e', position: SUPERADMIN_ROLE_POSITION },
+    create: {
+      name: 'superadmin',
+      color: '#f43f5e',
+      position: SUPERADMIN_ROLE_POSITION,
+    },
   });
 
   const permissions = await prisma.employeePermission.findMany({
