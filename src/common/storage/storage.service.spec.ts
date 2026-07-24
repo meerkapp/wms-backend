@@ -45,6 +45,30 @@ describe('StorageService', () => {
     expect(storage.normalizePublicUrl(externalUrl)).toBe(externalUrl);
   });
 
+  it('extracts a decoded object key from absolute and relative URLs', () => {
+    const storage = createStorageService('/storage');
+
+    expect(
+      storage.getObjectKey(
+        'http://meerk-minio:9000/meerk/avatars/account/My%20Avatar.png?version=2',
+      ),
+    ).toBe('avatars/account/My Avatar.png');
+    expect(storage.getObjectKey('/storage/meerk/avatars/account/avatar.png')).toBe(
+      'avatars/account/avatar.png',
+    );
+  });
+
+  it('does not treat bucket names outside the URL path as object markers', () => {
+    const storage = createStorageService('/storage');
+
+    expect(storage.getObjectKey('https://meerk.example.com/avatar.png')).toBeNull();
+    expect(
+      storage.getObjectKey('https://example.com/avatar.png?next=/meerk/secret.png'),
+    ).toBeNull();
+    expect(storage.getObjectKey('/storage/meerk/')).toBeNull();
+    expect(storage.getObjectKey('/storage/meerk/%invalid')).toBeNull();
+  });
+
   it('normalizes a trailing slash in the public URL', () => {
     const storage = createStorageService('https://cdn.example.com/storage/');
 

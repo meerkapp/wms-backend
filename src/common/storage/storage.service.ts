@@ -63,12 +63,20 @@ export class StorageService {
   }
 
   getObjectKey(url: string): string | null {
-    const bucketMarker = `/${this.bucket}/`;
-    const markerIndex = url.indexOf(bucketMarker);
-    if (markerIndex === -1) return null;
+    try {
+      const { pathname } = new URL(url, 'http://storage.local');
+      const pathSegments = pathname.split('/');
+      const bucketIndex = pathSegments.indexOf(this.bucket);
+      if (bucketIndex === -1) return null;
 
-    const key = url.slice(markerIndex + bucketMarker.length);
-    return key.length > 0 ? key : null;
+      const encodedKey = pathSegments.slice(bucketIndex + 1).join('/');
+      if (encodedKey.length === 0) return null;
+
+      const key = decodeURIComponent(encodedKey);
+      return key.length > 0 ? key : null;
+    } catch {
+      return null;
+    }
   }
 
   private trimTrailingSlash(value: string): string {

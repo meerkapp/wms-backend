@@ -1,6 +1,6 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { JwtService } from '@nestjs/jwt';
+import { JwtService, JwtSignOptions } from '@nestjs/jwt';
 import { Prisma } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { Response } from 'express';
@@ -224,10 +224,10 @@ export class AuthService {
       lastSeen: employee.lastSeen?.toISOString() ?? null,
     };
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return this.jwtService.sign(payload as any, {
-      secret: this.configService.get<string>('JWT_ACCESS_SECRET'),
-      expiresIn: this.configService.get('JWT_ACCESS_EXPIRES_IN'),
+    return this.jwtService.sign<JwtPayload>(payload, {
+      secret: this.configService.getOrThrow<string>('JWT_ACCESS_SECRET'),
+      expiresIn:
+        this.configService.getOrThrow<JwtSignOptions['expiresIn']>('JWT_ACCESS_EXPIRES_IN'),
     });
   }
 
