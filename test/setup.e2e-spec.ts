@@ -66,7 +66,7 @@ describe('Setup (e2e)', () => {
       expect(productTypes[0]).toMatchObject({
         name: 'Default',
         defaultWriteoffStrategy: 'FIFO',
-        skuMode: 'GLOBAL',
+        skuMode: 'SEQUENTIAL',
       });
       expect(defaultPriceLists).toHaveLength(1);
       expect(defaultPriceLists[0]).toMatchObject({

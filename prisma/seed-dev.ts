@@ -178,13 +178,16 @@ async function main(): Promise<void> {
   });
 
   const writeoffStrategies = [WriteoffStrategy.FIFO, WriteoffStrategy.LIFO, WriteoffStrategy.FEFO];
-  const skuModes = [SkuMode.GLOBAL, SkuMode.CUSTOM];
   await prisma.productType.createMany({
-    data: Array.from({ length: TYPE_COUNT }, (_, index) => ({
-      name: `${faker.commerce.productMaterial()} ${index + 1}`,
-      defaultWriteoffStrategy: faker.helpers.arrayElement(writeoffStrategies),
-      skuMode: faker.helpers.arrayElement(skuModes),
-    })),
+    data: Array.from({ length: TYPE_COUNT }, (_, index) => {
+      const skuMode = [SkuMode.SEQUENTIAL, SkuMode.TEMPLATE, SkuMode.MANUAL][index % 3]!;
+      return {
+        name: `${faker.commerce.productMaterial()} ${index + 1}`,
+        defaultWriteoffStrategy: faker.helpers.arrayElement(writeoffStrategies),
+        skuMode,
+        skuTemplate: skuMode === SkuMode.TEMPLATE ? `TYPE${index + 1}-{seq:8}` : null,
+      };
+    }),
   });
   const types = await prisma.productType.findMany({
     select: { id: true },

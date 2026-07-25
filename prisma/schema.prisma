@@ -188,8 +188,9 @@ enum WriteoffStrategy {
 }
 
 enum SkuMode {
-  GLOBAL
-  CUSTOM
+  SEQUENTIAL
+  TEMPLATE
+  MANUAL
 }
 
 enum BarcodeType {
@@ -224,9 +225,8 @@ model ProductType {
   id                      Int              @id @default(autoincrement())
   name                    String
   defaultWriteoffStrategy WriteoffStrategy @default(FIFO) @map("default_writeoff_strategy")
-  skuMode                 SkuMode          @default(GLOBAL) @map("sku_mode")
+  skuMode                 SkuMode          @default(SEQUENTIAL) @map("sku_mode")
   skuTemplate             String?          @map("sku_template")
-  skuCounter              Int              @default(0) @map("sku_counter")
   characteristicsScheme   Json?            @map("characteristics_scheme")
   updatedAt               DateTime         @updatedAt @map("updated_at")
 
@@ -272,6 +272,7 @@ model ProductCollection {
 model ProductItem {
   id                   Int               @id @default(autoincrement())
   sku                  String            @unique
+  creationRequestId    String?           @unique @map("creation_request_id") @db.Uuid
   name                 String
   productCollectionId  Int?              @map("product_collection_id")
   productTypeId        Int               @map("product_type_id")

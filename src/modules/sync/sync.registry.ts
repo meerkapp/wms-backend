@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { PUBLIC_PRODUCT_ITEM_SELECT } from '../product-item/product-item.select';
 import { SyncCursorPosition } from './sync-cursor';
 import { SyncEntityId, SyncTableName } from './sync.types';
 
@@ -180,14 +181,14 @@ export const SYNC_TABLES = {
       prisma.productItem.findMany({
         where: updatedAfterWhere(options.cursor),
         orderBy: UPDATED_AT_ORDER,
-        include: { productBrand: true, productMeasure: true },
+        select: PUBLIC_PRODUCT_ITEM_SELECT,
         ...withTake(options.limit),
       }),
     findByIds: (prisma, ids) =>
       prisma.productItem.findMany({
         where: byIdsWhere(ids),
         orderBy: UPDATED_AT_ORDER,
-        include: { productBrand: true, productMeasure: true },
+        select: PUBLIC_PRODUCT_ITEM_SELECT,
       }),
   },
   product_item_stats: {

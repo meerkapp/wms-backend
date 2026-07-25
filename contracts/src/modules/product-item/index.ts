@@ -12,8 +12,10 @@ import {
   type SyncFetchResponse,
   type SyncSocketPayload,
 } from '../sync';
+import { SKU_INPUT_REGEX, SKU_MAX_LENGTH } from '../product-type';
 
 export const ProductItemSchema = ProductItemModelSchema.omit({
+  creationRequestId: true,
   productCollection: true,
   productType: true,
   productBrand: true,
@@ -26,6 +28,26 @@ export const ProductItemSchema = ProductItemModelSchema.omit({
   favorites: true,
   archivedBy: true,
 }).extend({ archivedAt: z.string().nullable(), updatedAt: z.string() });
+
+export const CreateProductItemSchema = z.object({
+  creationRequestId: z.string().uuid(),
+  sku: z
+    .string()
+    .trim()
+    .min(1)
+    .max(SKU_MAX_LENGTH)
+    .regex(SKU_INPUT_REGEX, 'SKU must contain only letters, numbers, dots, dashes and underscores')
+    .optional(),
+  name: z.string().trim().min(1).max(255),
+  productCollectionId: z.number().int().positive().optional().nullable(),
+  productTypeId: z.number().int().positive(),
+  productBrandId: z.number().int().positive().optional().nullable(),
+  productMeasureId: z.number().int().positive(),
+  countryId: z.number().int().positive().optional().nullable(),
+  characteristics: z.record(z.unknown()).default({}),
+  writeoffStrategy: z.enum(['FIFO', 'LIFO', 'FEFO', 'MANUAL']).optional().nullable(),
+  isPublic: z.boolean().default(false),
+});
 
 export const ProductItemWithRelationsSchema = ProductItemSchema.extend({
   productBrand: ProductBrandSchema.nullable(),
@@ -86,6 +108,7 @@ export const ProductItemFavoriteChangeSchema = z.discriminatedUnion('isFavorite'
 
 export type ProductItem = z.infer<typeof ProductItemSchema>;
 export type ProductItemWithRelations = z.infer<typeof ProductItemWithRelationsSchema>;
+export type CreateProductItemDto = z.infer<typeof CreateProductItemSchema>;
 export type ProductItemArchivePage = Paginated<ProductItemWithRelations>;
 export type ProductItemBarcodeQuery = z.infer<typeof ProductItemBarcodeQuerySchema>;
 export type ProductItemStatsQuery = z.infer<typeof ProductItemStatsQuerySchema>;

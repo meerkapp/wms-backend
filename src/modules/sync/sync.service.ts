@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import type { ProductItemStatsFetchQuery } from '@meerkapp/wms-contracts';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { PUBLIC_PRODUCT_ITEM_SELECT } from '../product-item/product-item.select';
 import {
   cursorFromItems,
   encodeSyncCursor,
@@ -82,10 +83,7 @@ export class SyncService {
         archivedAt: null,
         ...(hasId ? { id: query.id } : { productCollectionId: query.productCollectionId }),
       },
-      include: {
-        productBrand: true,
-        productMeasure: true,
-      },
+      select: PUBLIC_PRODUCT_ITEM_SELECT,
       orderBy: hasId ? UPDATED_AT_ORDER : [{ sku: 'asc' }, { id: 'asc' }],
       take: fetchLimit + 1,
     });

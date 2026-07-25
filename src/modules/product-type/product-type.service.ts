@@ -1,5 +1,7 @@
+import { ProductTypeConfigurationSchema } from '@meerkapp/wms-contracts';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { ZodValidationException } from 'nestjs-zod';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CreateProductTypeDto } from './dto/create-product-type.dto';
 import { UpdateProductTypeDto } from './dto/update-product-type.dto';
@@ -35,14 +37,35 @@ export class ProductTypeService {
   async update(id: number, dto: UpdateProductTypeDto) {
     const type = await this.prisma.productType.findUnique({ where: { id } });
     if (!type) throw new NotFoundException(`ProductType ${id} not found`);
-    const { characteristicsScheme, ...rest } = dto;
+
+    const mergedConfiguration = ProductTypeConfigurationSchema.safeParse({
+      name: dto.name ?? type.name,
+      defaultWriteoffStrategy: dto.defaultWriteoffStrategy ?? type.defaultWriteoffStrategy,
+      skuMode: dto.skuMode ?? type.skuMode,
+      skuTemplate:
+        dto.skuTemplate !== undefined
+          ? dto.skuTemplate
+          : dto.skuMode !== undefined && dto.skuMode !== 'TEMPLATE'
+            ? null
+            : type.skuTemplate,
+      characteristicsScheme:
+        dto.characteristicsScheme !== undefined
+          ? dto.characteristicsScheme
+          : type.characteristicsScheme,
+    });
+    if (!mergedConfiguration.success) {
+      throw new ZodValidationException(mergedConfiguration.error);
+    }
+
+    const configuration = mergedConfiguration.data;
     const result = await this.prisma.productType.update({
       where: { id },
       data: {
-        ...rest,
-        ...(characteristicsScheme !== undefined && {
-          characteristicsScheme: toJsonInput(characteristicsScheme),
-        }),
+        name: configuration.name,
+        defaultWriteoffStrategy: configuration.defaultWriteoffStrategy,
+        skuMode: configuration.skuMode,
+        skuTemplate: configuration.skuTemplate ?? null,
+        characteristicsScheme: toJsonInput(configuration.characteristicsScheme ?? null),
       },
     });
     return result;

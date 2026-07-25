@@ -70,7 +70,7 @@ export class SetupService {
         data: {
           name: 'Default',
           defaultWriteoffStrategy: 'FIFO',
-          skuMode: 'GLOBAL',
+          skuMode: 'SEQUENTIAL',
         },
       });
 

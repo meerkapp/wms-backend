@@ -10,15 +10,9 @@ import { ConflictException, Injectable, NotFoundException } from '@nestjs/common
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { SyncGateway } from '../sync/sync.gateway';
-
-const PRODUCT_ITEM_RELATIONS = {
-  productBrand: true,
-  productMeasure: true,
-} satisfies Prisma.ProductItemInclude;
-
-type ProductItemWithRelationsRow = Prisma.ProductItemGetPayload<{
-  include: typeof PRODUCT_ITEM_RELATIONS;
-}>;
+import { CreateProductItemDto } from './dto/create-product-item.dto';
+import { ProductItemCreationService } from './product-item-creation.service';
+import { PUBLIC_PRODUCT_ITEM_SELECT, PublicProductItemRow } from './product-item.select';
 
 const SERIALIZABLE_TRANSACTION_ATTEMPTS = 3;
 
@@ -27,7 +21,13 @@ export class ProductItemService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly syncGateway: SyncGateway,
+    private readonly creationService: ProductItemCreationService,
   ) {}
+
+  async create(dto: CreateProductItemDto): Promise<ProductItemWithRelations> {
+    const created = await this.creationService.create(dto);
+    return this.serializeProductItem(created);
+  }
 
   async getStats(productCollectionId: number, warehouseId: number) {
     const stats = await this.prisma.productItemStats.findMany({
@@ -49,7 +49,7 @@ export class ProductItemService {
     const [rows, total] = await this.prisma.$transaction([
       this.prisma.productItem.findMany({
         where,
-        include: PRODUCT_ITEM_RELATIONS,
+        select: PUBLIC_PRODUCT_ITEM_SELECT,
         orderBy: [{ sku: 'asc' }, { id: 'asc' }],
         skip: (page - 1) * limit,
         take: limit,
@@ -71,7 +71,7 @@ export class ProductItemService {
       where: { code },
       orderBy: { id: 'asc' },
       include: {
-        productItem: { include: PRODUCT_ITEM_RELATIONS },
+        productItem: { select: PUBLIC_PRODUCT_ITEM_SELECT },
       },
     });
     if (!barcode) throw new NotFoundException(`Product barcode ${code} not found`);
@@ -89,7 +89,7 @@ export class ProductItemService {
 
       const productItem = await tx.productItem.findUnique({
         where: { id: productItemId },
-        include: PRODUCT_ITEM_RELATIONS,
+        select: PUBLIC_PRODUCT_ITEM_SELECT,
       });
       if (!productItem) throw new NotFoundException(`Product item ${productItemId} not found`);
       if (productItem.archivedAt !== null) return this.serializeProductItem(productItem);
@@ -110,7 +110,7 @@ export class ProductItemService {
       const archived = await tx.productItem.update({
         where: { id: productItemId },
         data: { archivedAt, archivedByEmployeeId: employeeId, updatedAt: archivedAt },
-        include: PRODUCT_ITEM_RELATIONS,
+        select: PUBLIC_PRODUCT_ITEM_SELECT,
       });
       return this.serializeProductItem(archived);
     });
@@ -120,7 +120,7 @@ export class ProductItemService {
     return this.prisma.$transaction(async (tx) => {
       const productItem = await tx.productItem.findUnique({
         where: { id: productItemId },
-        include: PRODUCT_ITEM_RELATIONS,
+        select: PUBLIC_PRODUCT_ITEM_SELECT,
       });
       if (!productItem) throw new NotFoundException(`Product item ${productItemId} not found`);
       if (productItem.archivedAt === null) return this.serializeProductItem(productItem);
@@ -129,7 +129,7 @@ export class ProductItemService {
       const restored = await tx.productItem.update({
         where: { id: productItemId },
         data: { archivedAt: null, archivedByEmployeeId: null, updatedAt: restoredAt },
-        include: PRODUCT_ITEM_RELATIONS,
+        select: PUBLIC_PRODUCT_ITEM_SELECT,
       });
 
       // These rows were deliberately removed from active offline read-models.
@@ -226,7 +226,7 @@ export class ProductItemService {
     this.syncGateway.emitUserEvent(PRODUCT_ITEM_FAVORITE_CHANGED_EVENT, employeeId, change);
   }
 
-  private serializeProductItem(row: ProductItemWithRelationsRow): ProductItemWithRelations {
+  private serializeProductItem(row: PublicProductItemRow): ProductItemWithRelations {
     return {
       ...row,
       archivedAt: row.archivedAt?.toISOString() ?? null,

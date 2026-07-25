@@ -1,4 +1,5 @@
 import {
+  Body,
   Controller,
   Delete,
   Get,
@@ -6,6 +7,7 @@ import {
   HttpStatus,
   Param,
   ParseIntPipe,
+  Post,
   Put,
   Query,
   UseGuards,
@@ -16,6 +18,7 @@ import { RequirePermissions } from '../../common/decorators/require-permissions.
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { JwtPayload } from '../auth/strategies/jwt.strategy';
+import { CreateProductItemDto } from './dto/create-product-item.dto';
 import { FindArchivedProductItemsDto } from './dto/find-archived-product-items.dto';
 import { FindProductItemByBarcodeDto } from './dto/find-product-item-by-barcode.dto';
 import { FindProductItemFavoritesDto } from './dto/find-product-item-favorites.dto';
@@ -28,6 +31,13 @@ import { ProductItemService } from './product-item.service';
 @Controller('product-item')
 export class ProductItemController {
   constructor(private readonly productItemService: ProductItemService) {}
+
+  @ApiOperation({ summary: 'Create a product item and generate its SKU' })
+  @RequirePermissions('product_item:create')
+  @Post()
+  create(@Body() dto: CreateProductItemDto) {
+    return this.productItemService.create(dto);
+  }
 
   @ApiOperation({ summary: 'Get product items stats by collection and warehouse' })
   @Get('stats')

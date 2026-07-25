@@ -5,15 +5,15 @@ import { App } from 'supertest/types';
 import { PrismaService } from '../src/common/prisma/prisma.service';
 import { cleanDatabase, createApp, seedAdmin } from './helpers';
 
-const GLOBAL_TYPE = {
+const SEQUENTIAL_TYPE = {
   name: 'Electronics',
-  skuMode: 'GLOBAL',
+  skuMode: 'SEQUENTIAL',
 };
 
-const CUSTOM_TYPE = {
+const TEMPLATE_TYPE = {
   name: 'Clothing',
-  skuMode: 'CUSTOM',
-  skuTemplate: '{color}-{counter}',
+  skuMode: 'TEMPLATE',
+  skuTemplate: '{color}-{seq:6}',
   characteristicsScheme: [
     {
       key: 'color',
@@ -94,7 +94,7 @@ describe('ProductType (e2e)', () => {
     it('returns 401 without token', async () => {
       await request(app.getHttpServer())
         .post('/api/product-type')
-        .send(GLOBAL_TYPE)
+        .send(SEQUENTIAL_TYPE)
         .expect(401);
     });
 
@@ -102,21 +102,20 @@ describe('ProductType (e2e)', () => {
       await request(app.getHttpServer())
         .post('/api/product-type')
         .set('Authorization', `Bearer ${noPermToken}`)
-        .send({ name: 'Blocked', skuMode: 'GLOBAL' })
+        .send({ name: 'Blocked', skuMode: 'SEQUENTIAL' })
         .expect(403);
     });
 
-    it('creates a GLOBAL product type', async () => {
+    it('creates a SEQUENTIAL product type', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/product-type')
         .set('Authorization', `Bearer ${adminToken}`)
-        .send(GLOBAL_TYPE)
+        .send(SEQUENTIAL_TYPE)
         .expect(201);
 
       expect(res.body).toMatchObject({
         name: 'Electronics',
-        skuMode: 'GLOBAL',
-        skuCounter: 0,
+        skuMode: 'SEQUENTIAL',
         skuTemplate: null,
         defaultWriteoffStrategy: 'FIFO',
         characteristicsScheme: null,
@@ -125,19 +124,33 @@ describe('ProductType (e2e)', () => {
       expect(res.body).toHaveProperty('updatedAt');
     });
 
-    it('creates a CUSTOM product type with characteristicsScheme', async () => {
+    it('creates a TEMPLATE product type with characteristicsScheme', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/product-type')
         .set('Authorization', `Bearer ${adminToken}`)
-        .send(CUSTOM_TYPE)
+        .send(TEMPLATE_TYPE)
         .expect(201);
 
       expect(res.body).toMatchObject({
         name: 'Clothing',
-        skuMode: 'CUSTOM',
-        skuTemplate: '{color}-{counter}',
+        skuMode: 'TEMPLATE',
+        skuTemplate: '{color}-{seq:6}',
       });
       expect(res.body.characteristicsScheme).toHaveLength(2);
+    });
+
+    it('creates a MANUAL product type without a template', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/product-type')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ name: 'Legacy imports', skuMode: 'MANUAL' })
+        .expect(201);
+
+      expect(res.body).toMatchObject({
+        name: 'Legacy imports',
+        skuMode: 'MANUAL',
+        skuTemplate: null,
+      });
     });
 
     it('returns 400 for missing name', async () => {
@@ -148,11 +161,11 @@ describe('ProductType (e2e)', () => {
         .expect(400);
     });
 
-    it('returns 400 for CUSTOM mode without skuTemplate', async () => {
+    it('returns 400 for TEMPLATE mode without skuTemplate', async () => {
       await request(app.getHttpServer())
         .post('/api/product-type')
         .set('Authorization', `Bearer ${adminToken}`)
-        .send({ name: 'Bad Custom', skuMode: 'CUSTOM' })
+        .send({ name: 'Bad Template', skuMode: 'TEMPLATE' })
         .expect(400);
     });
 
@@ -162,7 +175,7 @@ describe('ProductType (e2e)', () => {
         .set('Authorization', `Bearer ${adminToken}`)
         .send({
           name: 'Bad Keys',
-          skuMode: 'CUSTOM',
+          skuMode: 'TEMPLATE',
           skuTemplate: '{unknown_key}',
           characteristicsScheme: [
             {
@@ -173,6 +186,28 @@ describe('ProductType (e2e)', () => {
               options: [{ label: 'Red', value: 'RED' }],
             },
           ],
+        })
+        .expect(400);
+    });
+
+    it('returns 400 for removed brand tokens and templates in non-template modes', async () => {
+      await request(app.getHttpServer())
+        .post('/api/product-type')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          name: 'Brand template',
+          skuMode: 'TEMPLATE',
+          skuTemplate: '{brand}-{seq}',
+        })
+        .expect(400);
+
+      await request(app.getHttpServer())
+        .post('/api/product-type')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          name: 'Unexpected template',
+          skuMode: 'SEQUENTIAL',
+          skuTemplate: 'SKU-{seq}',
         })
         .expect(400);
     });
@@ -274,12 +309,51 @@ describe('ProductType (e2e)', () => {
       expect(res.body.characteristicsScheme[0]).toMatchObject({ key: 'voltage' });
     });
 
-    it('returns 400 when switching to CUSTOM with null skuTemplate', async () => {
+    it('returns 400 when switching to TEMPLATE without a skuTemplate', async () => {
       await request(app.getHttpServer())
         .patch(`/api/product-type/${typeId}`)
         .set('Authorization', `Bearer ${adminToken}`)
-        .send({ skuMode: 'CUSTOM', skuTemplate: null })
+        .send({ skuMode: 'TEMPLATE' })
         .expect(400);
+    });
+
+    it('validates an existing template when characteristics are patched', async () => {
+      const templateType = await prisma.productType.findFirstOrThrow({
+        where: { name: 'Clothing' },
+      });
+
+      await request(app.getHttpServer())
+        .patch(`/api/product-type/${templateType.id}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          characteristicsScheme: [
+            {
+              key: 'color',
+              label: 'Color',
+              type: 'select',
+              required: false,
+              options: [{ label: 'Red', value: 'RED' }],
+            },
+          ],
+        })
+        .expect(400);
+    });
+
+    it('clears an old template when switching to a non-template mode', async () => {
+      const templateType = await prisma.productType.findFirstOrThrow({
+        where: { name: 'Clothing' },
+      });
+
+      const res = await request(app.getHttpServer())
+        .patch(`/api/product-type/${templateType.id}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ skuMode: 'SEQUENTIAL' })
+        .expect(200);
+
+      expect(res.body).toMatchObject({
+        skuMode: 'SEQUENTIAL',
+        skuTemplate: null,
+      });
     });
 
     it('returns 404 for non-existent id', async () => {
