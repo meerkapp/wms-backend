@@ -82,7 +82,56 @@ jobs:
       - name: Build
         run: pnpm build
 
+      - name: Resolve package metadata
+        id: package
+        run: |
+          PACKAGE_NAME="$(node -p "require('./package.json').name")"
+          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+          PUBLISH_TAG="latest"
+          if [[ "${PACKAGE_VERSION}" == *-* ]]; then
+            PRERELEASE="${PACKAGE_VERSION#*-}"
+            PUBLISH_TAG="${PRERELEASE%%.*}"
+          fi
+          echo "name=${PACKAGE_NAME}" >> "${GITHUB_OUTPUT}"
+          echo "version=${PACKAGE_VERSION}" >> "${GITHUB_OUTPUT}"
+          echo "publish_tag=${PUBLISH_TAG}" >> "${GITHUB_OUTPUT}"
+
       - name: Publish
-        run: pnpm publish --no-git-checks --access public
+        run: |
+          PACKAGE="${{ steps.package.outputs.name }}@${{ steps.package.outputs.version }}"
+          if npm view "${PACKAGE}" version --json >/dev/null 2>&1; then
+            echo "${PACKAGE} is already published"
+          else
+            pnpm publish \
+              --no-git-checks \
+              --access public \
+              --tag "${{ steps.package.outputs.publish_tag }}"
+          fi
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Preserve latest for stable releases
+        if: steps.package.outputs.publish_tag != 'latest'
+        run: |
+          PACKAGE_NAME="${{ steps.package.outputs.name }}"
+          PACKAGE_VERSION="${{ steps.package.outputs.version }}"
+          PUBLISH_TAG="${{ steps.package.outputs.publish_tag }}"
+          npm dist-tag add "${PACKAGE_NAME}@${PACKAGE_VERSION}" "${PUBLISH_TAG}"
+          STABLE_VERSION="$(
+            npm view "${PACKAGE_NAME}" versions --json |
+              node -e "
+                let input = '';
+                process.stdin.on('data', (chunk) => input += chunk);
+                process.stdin.on('end', () => {
+                  const stable = JSON.parse(input)
+                    .filter((version) => !version.includes('-'))
+                    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+                    .at(-1);
+                  if (!stable) process.exit(1);
+                  process.stdout.write(stable);
+                });
+              "
+          )"
+          npm dist-tag add "${PACKAGE_NAME}@${STABLE_VERSION}" latest
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
