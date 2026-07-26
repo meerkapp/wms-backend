@@ -1,5 +1,9 @@
 import { z } from 'zod';
 
+export const ACCESS_SCOPE_TYPES = ['GLOBAL', 'WAREHOUSE'] as const;
+export const AccessScopeTypeSchema = z.enum(ACCESS_SCOPE_TYPES);
+export type AccessScopeType = z.infer<typeof AccessScopeTypeSchema>;
+
 export const ALL_PERMISSIONS = [
   'organization:create',
   'organization:update',
@@ -45,6 +49,46 @@ export const ALL_PERMISSIONS = [
 ] as const;
 
 export type Permission = (typeof ALL_PERMISSIONS)[number];
+
+export const PERMISSION_SCOPE_POLICY_TYPES = ['RESOURCE_SCOPED', 'GLOBAL_ONLY', 'SELF'] as const;
+export const PermissionScopePolicySchema = z.enum(PERMISSION_SCOPE_POLICY_TYPES);
+export type PermissionScopePolicy = z.infer<typeof PermissionScopePolicySchema>;
+
+export const PERMISSION_SCOPE_POLICIES = {
+  'organization:create': 'GLOBAL_ONLY',
+  'organization:update': 'GLOBAL_ONLY',
+  'warehouse:create': 'GLOBAL_ONLY',
+  'warehouse:update': 'GLOBAL_ONLY',
+  'locality:create': 'GLOBAL_ONLY',
+  'employee:create': 'RESOURCE_SCOPED',
+  'employee:update:info': 'RESOURCE_SCOPED',
+  'employee:update:warehouse': 'RESOURCE_SCOPED',
+  'employee:update:roles': 'RESOURCE_SCOPED',
+  'employee:update:email': 'RESOURCE_SCOPED',
+  'employee:update:password': 'RESOURCE_SCOPED',
+  'employee:toggle:active': 'RESOURCE_SCOPED',
+  'employee:update:avatar': 'RESOURCE_SCOPED',
+  'employee:update:own:info': 'SELF',
+  'employee:update:own:email': 'SELF',
+  'employee:update:own:password': 'SELF',
+  'employee:update:own:avatar': 'SELF',
+  'role:create': 'GLOBAL_ONLY',
+  'role:update': 'GLOBAL_ONLY',
+  'product_type:create': 'GLOBAL_ONLY',
+  'product_type:update': 'GLOBAL_ONLY',
+  'product_item:create': 'GLOBAL_ONLY',
+  'product_item:archive': 'GLOBAL_ONLY',
+  'folder:create': 'GLOBAL_ONLY',
+  'folder:update': 'GLOBAL_ONLY',
+  'folder:delete': 'GLOBAL_ONLY',
+  'folder:pin': 'GLOBAL_ONLY',
+  'product_collection:create': 'GLOBAL_ONLY',
+  'product_collection:update': 'GLOBAL_ONLY',
+  'product_collection:delete': 'GLOBAL_ONLY',
+  'product_collection:pin': 'GLOBAL_ONLY',
+  'price_list:create': 'GLOBAL_ONLY',
+  'price_list:update': 'GLOBAL_ONLY',
+} as const satisfies Record<Permission, PermissionScopePolicy>;
 
 export const LoginSchema = z.object({
   email: z.string().email(),

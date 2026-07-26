@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { EmployeeRoleModelSchema } from '../../generated/schemas/variants/pure/EmployeeRole.pure'
+import { AccessScopeTypeSchema } from '../auth'
 
 export const RolePermissionItemSchema = z.object({
   employeePermission: z.object({
@@ -15,8 +16,11 @@ export const RoleSchema = EmployeeRoleModelSchema
     position: z.number().int(),
     updatedAt: z.string(),
     permissions: z.array(RolePermissionItemSchema),
+    allowedScopeTypes: z.array(AccessScopeTypeSchema),
     canManage: z.boolean(),
-    canAssign: z.boolean(),
+    canAssign: z
+      .boolean()
+      .describe('Whether the current employee can assign this role in at least one scope'),
   })
 
 export type Role = z.infer<typeof RoleSchema>
