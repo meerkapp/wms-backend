@@ -11,6 +11,7 @@ import { ReorderRolesDto } from './dto/reorder-roles.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
 import { PROTECTED_ROLE_NAME, SUPERADMIN_ROLE_POSITION } from './role-hierarchy.constants';
 import { ActorRoleAccess, RoleHierarchyService } from './role-hierarchy.service';
+import { getAllowedScopeTypes } from './permission-scope';
 
 const ROLE_SELECT = {
   id: true,
@@ -108,12 +109,27 @@ export class RoleService {
 
         const role = await this.findOneWithClient(tx, id);
         this.hierarchy.assertCanManageRole(access, role);
-        await this.hierarchy.assertDelegatedPermissions(
+        const requestedPermissions = await this.hierarchy.assertDelegatedPermissions(
           tx,
           permissionIds,
           access,
           role.permissions.map(({ employeePermission }) => employeePermission.id),
         );
+        if (
+          requestedPermissions !== undefined &&
+          !getAllowedScopeTypes(requestedPermissions.map(({ name }) => name)).includes(
+            'WAREHOUSE',
+          )
+        ) {
+          const scopedAssignmentCount = await tx.employeeRoleAssignment.count({
+            where: { employeeRoleId: id, scopeType: 'WAREHOUSE' },
+          });
+          if (scopedAssignmentCount > 0) {
+            throw new BadRequestException(
+              'Remove warehouse role assignments before adding global-only permissions',
+            );
+          }
+        }
 
         if (Object.keys(roleData).length > 0) {
           await tx.employeeRole.update({
@@ -137,8 +153,11 @@ export class RoleService {
           }
         }
 
-        const updated = await this.findOneWithClient(tx, id);
-        return this.serializeRole(updated, access);
+        const [updated, updatedAccess] = await Promise.all([
+          this.findOneWithClient(tx, id),
+          this.hierarchy.getActorAccess(tx, actorId),
+        ]);
+        return this.serializeRole(updated, updatedAccess);
       });
     } catch (error) {
       this.rethrowRoleNameConflict(error, dto.name);
@@ -165,7 +184,7 @@ export class RoleService {
 
       const highestManagedPosition = access.isSuperadmin
         ? manageableRoles.length
-        : access.highestRolePosition! - 1;
+        : this.hierarchy.getEffectiveRolePosition(access, { warehouseId: null })! - 1;
       for (const [index, roleId] of dto.roleIds.entries()) {
         await tx.employeeRole.update({
           where: { id: roleId },
@@ -209,10 +228,14 @@ export class RoleService {
   }
 
   private serializeRole(role: RoleRow, access: ActorRoleAccess) {
+    const permissionNames = role.permissions.map(
+      ({ employeePermission }) => employeePermission.name,
+    );
     return {
       ...role,
+      allowedScopeTypes: getAllowedScopeTypes(permissionNames),
       canManage: this.hierarchy.canManageRole(access, role),
-      canAssign: this.hierarchy.canAssignRole(access, role),
+      canAssign: this.hierarchy.canAssignRoleInAnyScope(access, role),
     };
   }
 

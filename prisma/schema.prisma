@@ -180,6 +180,11 @@ enum PriceListTargetType {
   @@map("price_list_target_type")
 }
 
+enum AccessScopeType {
+  GLOBAL
+  WAREHOUSE
+}
+
 enum WriteoffStrategy {
   FIFO
   LIFO
@@ -489,15 +494,21 @@ model ServerSettings {
 }
 
 model EmployeeRoleAssignment {
-  id             Int      @id @default(autoincrement())
-  employeeId     String   @map("employee_id") @db.Uuid
-  employeeRoleId Int      @map("employee_role_id")
-  updatedAt      DateTime @updatedAt @map("updated_at")
+  id             Int             @id @default(autoincrement())
+  employeeId     String          @map("employee_id") @db.Uuid
+  employeeRoleId Int             @map("employee_role_id")
+  scopeType      AccessScopeType @map("scope_type")
+  warehouseId    Int?            @map("warehouse_id")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
 
   employee     Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   employeeRole EmployeeRole @relation(fields: [employeeRoleId], references: [id], onDelete: Cascade)
+  warehouse    Warehouse?   @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
 
-  @@unique([employeeId, employeeRoleId])
+  // The scope shape check and partial unique indexes are defined in the SQL migration.
+  @@index([employeeId])
+  @@index([employeeRoleId])
+  @@index([warehouseId])
   @@map("employee_role_assignment")
 }
 
@@ -560,12 +571,13 @@ model Warehouse {
   localityId     Int      @map("locality_id")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
-  organization         Organization          @relation(fields: [organizationId], references: [id])
-  locality             Locality              @relation(fields: [localityId], references: [id])
-  employees            Employee[]
-  shipments            ProductShipment[]
-  priceListAssignments PriceListAssignment[]
-  stats                ProductItemStats[]
+  organization            Organization             @relation(fields: [organizationId], references: [id])
+  locality                Locality                 @relation(fields: [localityId], references: [id])
+  employees               Employee[]
+  employeeRoleAssignments EmployeeRoleAssignment[]
+  shipments               ProductShipment[]
+  priceListAssignments    PriceListAssignment[]
+  stats                   ProductItemStats[]
 
   @@index([organizationId])
   @@index([localityId])

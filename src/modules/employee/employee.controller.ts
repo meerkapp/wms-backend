@@ -149,6 +149,6 @@ export class EmployeeController {
     @Body() dto: UpdateEmployeeDto,
     @CurrentUser() user: JwtPayload,
   ) {
-    return this.employeeService.update(id, dto, user.permissions, user.sub);
+    return this.employeeService.update(id, dto, user.sub);
   }
 }

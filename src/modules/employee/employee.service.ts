@@ -6,12 +6,17 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
+import type { EmployeeRoleAssignmentInput, Permission } from '@meerkapp/wms-contracts';
 import { Prisma } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { StorageService } from '../../common/storage/storage.service';
-import { RoleHierarchyService } from '../role/role-hierarchy.service';
+import {
+  NormalizedRoleAssignment,
+  RoleAssignmentChanges,
+  RoleHierarchyService,
+} from '../role/role-hierarchy.service';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { UpdateEmployeeDto } from './dto/update-employee.dto';
 import { UpdateOwnPasswordDto, UpdateOwnProfileDto } from './dto/update-own-profile.dto';
@@ -29,6 +34,9 @@ const EMPLOYEE_SELECT = {
   updatedAt: true,
   roleAssignments: {
     select: {
+      id: true,
+      scopeType: true,
+      warehouseId: true,
       employeeRole: {
         select: {
           id: true,
@@ -70,6 +78,16 @@ function hasValidAvatarSignature(file: Express.Multer.File): boolean {
 
 type EmployeeWithAvatar = { avatarUrl: string | null };
 
+function normalizeRoleAssignments(
+  roleAssignments: EmployeeRoleAssignmentInput[] | undefined,
+): NormalizedRoleAssignment[] | undefined {
+  return roleAssignments?.map((assignment) => ({
+    roleId: assignment.roleId,
+    scopeType: assignment.scopeType,
+    warehouseId: assignment.scopeType === 'WAREHOUSE' ? assignment.warehouseId : null,
+  }));
+}
+
 @Injectable()
 export class EmployeeService {
   constructor(
@@ -79,25 +97,42 @@ export class EmployeeService {
   ) {}
 
   async create(dto: CreateEmployeeDto, actorId: string) {
-    const { password, roleIds, ...employeeData } = dto;
+    const { password, roleAssignments, ...employeeData } = dto;
+    const requestedAssignments = normalizeRoleAssignments(roleAssignments) ?? [];
+    const warehouseId = employeeData.warehouseId ?? null;
+    await this.assertCanCreateEmployee(actorId, warehouseId);
     const hashedPassword = await bcrypt.hash(password, 10);
 
     try {
       const employee = await this.prisma.$transaction(async (tx) => {
         await this.hierarchy.lock(tx);
         const actorAccess = await this.hierarchy.getActorAccess(tx, actorId);
-        this.hierarchy.assertCurrentPermission(actorAccess, 'employee:create');
-        await this.hierarchy.assertAssignableRoles(tx, roleIds ?? [], actorAccess);
+        await this.assertWarehouseExists(tx, warehouseId);
+        this.hierarchy.assertPermissionInContext(actorAccess, 'employee:create', { warehouseId });
+        if (requestedAssignments.length > 0) {
+          this.hierarchy.assertPermissionInContext(actorAccess, 'employee:update:roles', {
+            warehouseId,
+          });
+          await this.hierarchy.authorizeRoleAssignmentReplacement(
+            tx,
+            null,
+            [],
+            requestedAssignments,
+            actorAccess,
+          );
+        }
 
         const employee = await tx.employee.create({
           data: { ...employeeData, password: hashedPassword },
         });
 
-        if (roleIds?.length) {
+        if (requestedAssignments.length > 0) {
           await tx.employeeRoleAssignment.createMany({
-            data: roleIds.map((roleId) => ({
+            data: requestedAssignments.map((assignment) => ({
               employeeId: employee.id,
-              employeeRoleId: roleId,
+              employeeRoleId: assignment.roleId,
+              scopeType: assignment.scopeType,
+              warehouseId: assignment.warehouseId,
             })),
           });
         }
@@ -148,63 +183,97 @@ export class EmployeeService {
     return this.withPublicAvatar(employee);
   }
 
-  async update(id: string, dto: UpdateEmployeeDto, permissions: string[], actorId: string) {
-    const { roleIds, newPassword, email, firstName, lastName, phone, warehouseId, isActive } = dto;
+  async update(id: string, dto: UpdateEmployeeDto, actorId: string) {
+    const {
+      roleAssignments,
+      newPassword,
+      email,
+      firstName,
+      lastName,
+      phone,
+      warehouseId,
+      isActive,
+    } = dto;
+    const requestedAssignments = normalizeRoleAssignments(roleAssignments);
 
     const permissionRequirements = [
       {
         applies: firstName !== undefined || lastName !== undefined || phone !== undefined,
         permission: 'employee:update:info',
-        error: 'No permission to update info',
-      },
-      {
-        applies: warehouseId !== undefined,
-        permission: 'employee:update:warehouse',
-        error: 'No permission to update warehouse',
-      },
-      {
-        applies: roleIds !== undefined,
-        permission: 'employee:update:roles',
-        error: 'No permission to update roles',
       },
       {
         applies: email !== undefined,
         permission: 'employee:update:email',
-        error: 'No permission to update email',
       },
       {
         applies: newPassword !== undefined,
         permission: 'employee:update:password',
-        error: 'No permission to update password',
       },
       {
         applies: isActive !== undefined,
         permission: 'employee:toggle:active',
-        error: 'No permission to toggle employee active status',
       },
     ] as const;
 
-    for (const requirement of permissionRequirements) {
-      if (requirement.applies && !permissions.includes(requirement.permission)) {
-        throw new ForbiddenException(requirement.error);
-      }
+    let hashedNewPassword: string | undefined;
+    if (newPassword !== undefined) {
+      await this.assertCanManageTargetWithPermission(
+        actorId,
+        id,
+        'employee:update:password',
+      );
+      hashedNewPassword = await bcrypt.hash(newPassword, 10);
     }
-
-    const hashedNewPassword =
-      newPassword === undefined ? undefined : await bcrypt.hash(newPassword, 10);
 
     try {
       const employee = await this.prisma.$transaction(async (tx) => {
         await this.hierarchy.lock(tx);
         const actorAccess = await this.hierarchy.getActorAccess(tx, actorId);
-        await this.hierarchy.assertCanManageEmployee(tx, id, actorAccess);
+        const target = await this.hierarchy.getEmployeeAuthorizationTarget(tx, id);
+        let assignmentChanges: RoleAssignmentChanges | undefined;
+        this.hierarchy.assertCanManageEmployee(actorAccess, target);
+
         for (const requirement of permissionRequirements) {
           if (requirement.applies) {
-            this.hierarchy.assertCurrentPermission(actorAccess, requirement.permission);
+            this.hierarchy.assertPermissionInContext(actorAccess, requirement.permission, {
+              warehouseId: target.warehouseId,
+            });
           }
         }
-        if (roleIds !== undefined) {
-          await this.hierarchy.assertAssignableRoles(tx, roleIds, actorAccess);
+
+        if (isActive === false) {
+          await this.hierarchy.assertCanDeactivateEmployee(tx, target);
+        }
+
+        if (warehouseId !== undefined) {
+          await this.assertWarehouseExists(tx, warehouseId);
+          this.hierarchy.assertPermissionInContext(actorAccess, 'employee:update:warehouse', {
+            warehouseId: target.warehouseId,
+          });
+          this.hierarchy.assertPermissionInContext(actorAccess, 'employee:update:warehouse', {
+            warehouseId,
+          });
+          this.hierarchy.assertCanManageEmployee(actorAccess, target, { warehouseId });
+        }
+
+        if (requestedAssignments !== undefined) {
+          this.hierarchy.assertPermissionInContext(actorAccess, 'employee:update:roles', {
+            warehouseId: target.warehouseId,
+          });
+          const existingAssignments = target.roleAssignments.map(
+            ({ employeeRoleId, scopeType, warehouseId: assignmentWarehouseId }) => ({
+              roleId: employeeRoleId,
+              scopeType,
+              warehouseId: assignmentWarehouseId,
+            }),
+          );
+          assignmentChanges = await this.hierarchy.authorizeRoleAssignmentReplacement(
+            tx,
+            target,
+            existingAssignments,
+            requestedAssignments,
+            actorAccess,
+          );
         }
 
         const employee = await tx.employee.findUnique({ where: { id } });
@@ -223,11 +292,27 @@ export class EmployeeService {
           await tx.employee.update({ where: { id }, data: dataToUpdate });
         }
 
-        if (roleIds !== undefined) {
-          await tx.employeeRoleAssignment.deleteMany({ where: { employeeId: id } });
-          if (roleIds.length > 0) {
+        if (assignmentChanges !== undefined) {
+          if (assignmentChanges.removed.length > 0) {
+            await tx.employeeRoleAssignment.deleteMany({
+              where: {
+                employeeId: id,
+                OR: assignmentChanges.removed.map((assignment) => ({
+                  employeeRoleId: assignment.roleId,
+                  scopeType: assignment.scopeType,
+                  warehouseId: assignment.warehouseId,
+                })),
+              },
+            });
+          }
+          if (assignmentChanges.added.length > 0) {
             await tx.employeeRoleAssignment.createMany({
-              data: roleIds.map((roleId) => ({ employeeId: id, employeeRoleId: roleId })),
+              data: assignmentChanges.added.map((assignment) => ({
+                employeeId: id,
+                employeeRoleId: assignment.roleId,
+                scopeType: assignment.scopeType,
+                warehouseId: assignment.warehouseId,
+              })),
             });
           }
         }
@@ -304,7 +389,7 @@ export class EmployeeService {
     actorId?: string,
   ): Promise<{ avatarUrl: string }> {
     if (actorId) {
-      await this.assertCanManageTarget(actorId, id);
+      await this.assertCanManageTargetWithPermission(actorId, id, 'employee:update:avatar');
     }
 
     const employee = await this.prisma.employee.findUnique({ where: { id } });
@@ -323,8 +408,11 @@ export class EmployeeService {
         if (actorId) {
           await this.hierarchy.lock(tx);
           const actorAccess = await this.hierarchy.getActorAccess(tx, actorId);
-          this.hierarchy.assertCurrentPermission(actorAccess, 'employee:update:avatar');
-          await this.hierarchy.assertCanManageEmployee(tx, id, actorAccess);
+          const target = await this.hierarchy.getEmployeeAuthorizationTarget(tx, id);
+          this.hierarchy.assertPermissionInContext(actorAccess, 'employee:update:avatar', {
+            warehouseId: target.warehouseId,
+          });
+          this.hierarchy.assertCanManageEmployee(actorAccess, target);
         }
         await tx.employee.update({
           where: { id },
@@ -349,8 +437,11 @@ export class EmployeeService {
       if (actorId) {
         await this.hierarchy.lock(tx);
         const actorAccess = await this.hierarchy.getActorAccess(tx, actorId);
-        this.hierarchy.assertCurrentPermission(actorAccess, 'employee:update:avatar');
-        await this.hierarchy.assertCanManageEmployee(tx, id, actorAccess);
+        const target = await this.hierarchy.getEmployeeAuthorizationTarget(tx, id);
+        this.hierarchy.assertPermissionInContext(actorAccess, 'employee:update:avatar', {
+          warehouseId: target.warehouseId,
+        });
+        this.hierarchy.assertCanManageEmployee(actorAccess, target);
       }
 
       const employee = await tx.employee.findUnique({ where: { id } });
@@ -370,6 +461,20 @@ export class EmployeeService {
     return { avatarUrl: null };
   }
 
+  private async assertCanCreateEmployee(
+    actorId: string,
+    warehouseId: number | null,
+  ): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      await this.hierarchy.lock(tx);
+      const actorAccess = await this.hierarchy.getActorAccess(tx, actorId);
+      await this.assertWarehouseExists(tx, warehouseId);
+      this.hierarchy.assertPermissionInContext(actorAccess, 'employee:create', {
+        warehouseId,
+      });
+    });
+  }
+
   private withPublicAvatar<T extends EmployeeWithAvatar>(employee: T): T {
     return {
       ...employee,
@@ -377,12 +482,31 @@ export class EmployeeService {
     };
   }
 
-  private async assertCanManageTarget(actorId: string, targetId: string): Promise<void> {
+  private async assertCanManageTargetWithPermission(
+    actorId: string,
+    targetId: string,
+    permission: Permission,
+  ): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
       await this.hierarchy.lock(tx);
       const actorAccess = await this.hierarchy.getActorAccess(tx, actorId);
-      this.hierarchy.assertCurrentPermission(actorAccess, 'employee:update:avatar');
-      await this.hierarchy.assertCanManageEmployee(tx, targetId, actorAccess);
+      const target = await this.hierarchy.getEmployeeAuthorizationTarget(tx, targetId);
+      this.hierarchy.assertPermissionInContext(actorAccess, permission, {
+        warehouseId: target.warehouseId,
+      });
+      this.hierarchy.assertCanManageEmployee(actorAccess, target);
     });
+  }
+
+  private async assertWarehouseExists(
+    tx: Prisma.TransactionClient,
+    warehouseId: number | null,
+  ): Promise<void> {
+    if (warehouseId === null) return;
+    const warehouse = await tx.warehouse.findUnique({
+      where: { id: warehouseId },
+      select: { id: true },
+    });
+    if (!warehouse) throw new BadRequestException(`Warehouse ${warehouseId} does not exist`);
   }
 }

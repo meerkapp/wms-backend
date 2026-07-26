@@ -3,6 +3,7 @@ import * as bcrypt from 'bcrypt';
 import * as request from 'supertest';
 import { App } from 'supertest/types';
 import { PrismaService } from '../src/common/prisma/prisma.service';
+import { PermissionsSyncService } from '../src/modules/auth/permissions-sync.service';
 import { cleanDatabase, createApp, seedAdmin } from './helpers';
 
 describe('Role authorization (e2e)', () => {
@@ -36,7 +37,7 @@ describe('Role authorization (e2e)', () => {
         password: await bcrypt.hash(password, 10),
         firstName: 'Role',
         lastName: 'Actor',
-        roleAssignments: { create: { employeeRoleId: role.id } },
+        roleAssignments: { create: { employeeRoleId: role.id, scopeType: 'GLOBAL' } },
       },
     });
 
@@ -117,6 +118,225 @@ describe('Role authorization (e2e)', () => {
     ]);
   });
 
+  it('reports allowed scopes and protects existing warehouse assignments', async () => {
+    const [employeeUpdateInfo, roleUpdate] = await Promise.all([
+      prisma.employeePermission.findUniqueOrThrow({
+        where: { name: 'employee:update:info' },
+      }),
+      prisma.employeePermission.findUniqueOrThrow({
+        where: { name: 'role:update' },
+      }),
+    ]);
+    const scopedRole = await prisma.employeeRole.create({
+      data: {
+        name: roleName('scoped'),
+        color: '#334155',
+        position: 10,
+        permissions: {
+          create: { employeePermissionId: employeeUpdateInfo.id },
+        },
+      },
+    });
+    const globalRole = await prisma.employeeRole.create({
+      data: {
+        name: roleName('global'),
+        color: '#475569',
+        position: 11,
+        permissions: {
+          create: { employeePermissionId: roleUpdate.id },
+        },
+      },
+    });
+
+    const roles = await request(app.getHttpServer())
+      .get('/api/role')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    expect(roles.body).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: scopedRole.id,
+          allowedScopeTypes: ['GLOBAL', 'WAREHOUSE'],
+        }),
+        expect.objectContaining({
+          id: globalRole.id,
+          allowedScopeTypes: ['GLOBAL'],
+        }),
+      ]),
+    );
+
+    const country = await prisma.country.findFirstOrThrow();
+    const organization = await prisma.organization.create({
+      data: { name: roleName('organization') },
+    });
+    const locality = await prisma.locality.create({
+      data: { name: roleName('locality'), countryId: country.id },
+    });
+    const warehouse = await prisma.warehouse.create({
+      data: {
+        code: roleName('warehouse'),
+        address: 'Role scope warehouse',
+        organizationId: organization.id,
+        localityId: locality.id,
+      },
+    });
+    await prisma.employee.create({
+      data: {
+        email: `${roleName('binding')}@e2e.test`,
+        password: await bcrypt.hash('Test1234!', 10),
+        firstName: 'Scoped',
+        lastName: 'Binding',
+        roleAssignments: {
+          create: {
+            employeeRoleId: scopedRole.id,
+            scopeType: 'WAREHOUSE',
+            warehouseId: warehouse.id,
+          },
+        },
+      },
+    });
+
+    await request(app.getHttpServer())
+      .patch(`/api/role/${scopedRole.id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ permissionIds: [employeeUpdateInfo.id, roleUpdate.id] })
+      .expect(400);
+
+    expect(
+      await prisma.employeeRolePermission.findMany({
+        where: { employeeRoleId: scopedRole.id },
+        select: { employeePermissionId: true },
+      }),
+    ).toEqual([{ employeePermissionId: employeeUpdateInfo.id }]);
+  });
+
+  it('enforces role assignment scope invariants in the database', async () => {
+    const country = await prisma.country.findFirstOrThrow();
+    const organization = await prisma.organization.create({
+      data: { name: roleName('constraint-organization') },
+    });
+    const locality = await prisma.locality.create({
+      data: { name: roleName('constraint-locality'), countryId: country.id },
+    });
+    const warehouse = await prisma.warehouse.create({
+      data: {
+        code: roleName('constraint-warehouse'),
+        address: 'Constraint warehouse',
+        organizationId: organization.id,
+        localityId: locality.id,
+      },
+    });
+    const role = await prisma.employeeRole.create({
+      data: {
+        name: roleName('constraint-role'),
+        color: '#64748b',
+        permissions: {
+          create: {
+            employeePermission: {
+              connect: { name: 'employee:update:info' },
+            },
+          },
+        },
+      },
+    });
+    const employee = await prisma.employee.create({
+      data: {
+        email: `${roleName('constraint-employee')}@e2e.test`,
+        password: await bcrypt.hash('Test1234!', 10),
+        firstName: 'Constraint',
+        lastName: 'Employee',
+      },
+    });
+
+    await prisma.employeeRoleAssignment.create({
+      data: {
+        employeeId: employee.id,
+        employeeRoleId: role.id,
+        scopeType: 'WAREHOUSE',
+        warehouseId: warehouse.id,
+      },
+    });
+
+    await expect(
+      prisma.employeeRoleAssignment.create({
+        data: {
+          employeeId: employee.id,
+          employeeRoleId: role.id,
+          scopeType: 'WAREHOUSE',
+          warehouseId: warehouse.id,
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'P2002' });
+
+    await expect(
+      prisma.employeeRoleAssignment.create({
+        data: {
+          employeeId: employee.id,
+          employeeRoleId: role.id,
+          scopeType: 'GLOBAL',
+          warehouseId: warehouse.id,
+        },
+      }),
+    ).rejects.toThrow('employee_role_assignment_scope_check');
+  });
+
+  it('fails permission sync when a warehouse binding violates the role scope policy', async () => {
+    const country = await prisma.country.findFirstOrThrow();
+    const organization = await prisma.organization.create({
+      data: { name: roleName('integrity-organization') },
+    });
+    const locality = await prisma.locality.create({
+      data: { name: roleName('integrity-locality'), countryId: country.id },
+    });
+    const warehouse = await prisma.warehouse.create({
+      data: {
+        code: roleName('integrity-warehouse'),
+        address: 'Integrity warehouse',
+        organizationId: organization.id,
+        localityId: locality.id,
+      },
+    });
+    const role = await prisma.employeeRole.create({
+      data: {
+        name: roleName('invalid-scoped-role'),
+        color: '#64748b',
+        permissions: {
+          create: {
+            employeePermission: {
+              connect: { name: 'role:update' },
+            },
+          },
+        },
+      },
+    });
+    const employee = await prisma.employee.create({
+      data: {
+        email: `${roleName('invalid-scoped-employee')}@e2e.test`,
+        password: await bcrypt.hash('Test1234!', 10),
+        firstName: 'Invalid',
+        lastName: 'Binding',
+      },
+    });
+    await prisma.employeeRoleAssignment.create({
+      data: {
+        employeeId: employee.id,
+        employeeRoleId: role.id,
+        scopeType: 'WAREHOUSE',
+        warehouseId: warehouse.id,
+      },
+    });
+
+    try {
+      await expect(app.get(PermissionsSyncService).sync()).rejects.toThrow(
+        'Invalid warehouse role assignments',
+      );
+    } finally {
+      await prisma.employeeRoleAssignment.deleteMany({ where: { employeeId: employee.id } });
+      await prisma.employee.delete({ where: { id: employee.id } });
+      await prisma.employeeRole.delete({ where: { id: role.id } });
+    }
+  });
+
   it('prevents a role manager from delegating a permission they do not have', async () => {
     const { token } = await createEmployeeToken(['role:update']);
     const [roleUpdate, employeeCreate] = await Promise.all([
@@ -182,7 +402,10 @@ describe('Role authorization (e2e)', () => {
 
   it('only allows managing roles below the acting employee highest role', async () => {
     const actorPosition = 100;
-    const { token } = await createEmployeeToken(['role:update'], actorPosition);
+    const { token } = await createEmployeeToken(
+      ['role:update', 'employee:update:roles'],
+      actorPosition,
+    );
     const lowerRole = await prisma.employeeRole.create({
       data: {
         name: roleName('lower'),

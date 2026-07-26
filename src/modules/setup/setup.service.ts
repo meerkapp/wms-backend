@@ -55,6 +55,7 @@ export class SetupService {
         data: {
           employeeId: newEmployee.id,
           employeeRoleId: adminRole.id,
+          scopeType: 'GLOBAL',
         },
       });
 

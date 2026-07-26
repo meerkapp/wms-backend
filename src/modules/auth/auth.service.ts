@@ -7,6 +7,7 @@ import { Response } from 'express';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { RedisService } from '../../common/redis/redis.service';
 import { StorageService } from '../../common/storage/storage.service';
+import { isPermissionGrantedByScope } from '../role/permission-scope';
 import {
   DEVICE_SESSION_COOKIE,
   DEVICE_SESSION_TTL_MS,
@@ -252,6 +253,7 @@ export class AuthService {
 
   private extractPermissions(employee: {
     roleAssignments: Array<{
+      scopeType: 'GLOBAL' | 'WAREHOUSE';
       employeeRole: {
         permissions: Array<{
           employeePermission: { name: string };
@@ -262,7 +264,10 @@ export class AuthService {
     const permissionSet = new Set<string>();
     for (const assignment of employee.roleAssignments) {
       for (const rolePermission of assignment.employeeRole.permissions) {
-        permissionSet.add(rolePermission.employeePermission.name);
+        const permission = rolePermission.employeePermission.name;
+        if (isPermissionGrantedByScope(permission, assignment.scopeType)) {
+          permissionSet.add(permission);
+        }
       }
     }
     return Array.from(permissionSet);

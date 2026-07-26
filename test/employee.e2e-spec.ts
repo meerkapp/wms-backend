@@ -30,6 +30,8 @@ describe('Employee (e2e)', () => {
   let adminToken: string;
   let adminEmployeeId: string;
   let targetEmployeeId: string;
+  let warehouseAId: number;
+  let warehouseBId: number;
 
   let counter = 0;
   const uniqueEmail = (prefix = 'user') => `${prefix}-${++counter}@e2e.test`;
@@ -39,7 +41,19 @@ describe('Employee (e2e)', () => {
     permissions: string[],
     email = uniqueEmail('limited'),
     position = 1_000_000 - counter,
+    options: {
+      scopeType?: 'GLOBAL' | 'WAREHOUSE';
+      scopeWarehouseId?: number;
+      additionalWarehouseIds?: number[];
+      employeeWarehouseId?: number;
+    } = {},
   ): Promise<string> {
+    const {
+      scopeType = 'GLOBAL',
+      scopeWarehouseId,
+      additionalWarehouseIds = [],
+      employeeWarehouseId,
+    } = options;
     const password = 'Test1234!';
     const role = await prisma.employeeRole.create({
       data: {
@@ -64,7 +78,21 @@ describe('Employee (e2e)', () => {
         password: await bcrypt.hash(password, 10),
         firstName: 'Limited',
         lastName: 'User',
-        roleAssignments: { create: { employeeRoleId: role.id } },
+        warehouseId: employeeWarehouseId,
+        roleAssignments: {
+          create: [
+            {
+              employeeRoleId: role.id,
+              scopeType,
+              warehouseId: scopeType === 'WAREHOUSE' ? scopeWarehouseId : null,
+            },
+            ...additionalWarehouseIds.map((warehouseId) => ({
+              employeeRoleId: role.id,
+              scopeType: 'WAREHOUSE' as const,
+              warehouseId,
+            })),
+          ],
+        },
       },
     });
 
@@ -92,6 +120,27 @@ describe('Employee (e2e)', () => {
     return res.body.access_token as string;
   }
 
+  async function employeeAt(
+    prefix: string,
+    warehouseId: number | null,
+    roleAssignments: Array<{
+      employeeRoleId: number;
+      scopeType: 'GLOBAL' | 'WAREHOUSE';
+      warehouseId: number | null;
+    }> = [],
+  ) {
+    return prisma.employee.create({
+      data: {
+        email: uniqueEmail(prefix),
+        password: await bcrypt.hash('Test1234!', 10),
+        firstName: prefix,
+        lastName: 'Employee',
+        warehouseId,
+        roleAssignments: roleAssignments.length > 0 ? { create: roleAssignments } : undefined,
+      },
+    });
+  }
+
   beforeAll(async () => {
     app = await createApp([{ token: StorageService, value: mockStorage }]);
     prisma = app.get(PrismaService);
@@ -104,6 +153,34 @@ describe('Employee (e2e)', () => {
       })
     ).id;
 
+    const country = await prisma.country.findFirstOrThrow();
+    const organization = await prisma.organization.create({
+      data: { name: 'Scoped access organization' },
+    });
+    const locality = await prisma.locality.create({
+      data: { name: 'Scoped access locality', countryId: country.id },
+    });
+    const [warehouseA, warehouseB] = await Promise.all([
+      prisma.warehouse.create({
+        data: {
+          code: 'SCOPE-A',
+          address: 'Scope A',
+          organizationId: organization.id,
+          localityId: locality.id,
+        },
+      }),
+      prisma.warehouse.create({
+        data: {
+          code: 'SCOPE-B',
+          address: 'Scope B',
+          organizationId: organization.id,
+          localityId: locality.id,
+        },
+      }),
+    ]);
+    warehouseAId = warehouseA.id;
+    warehouseBId = warehouseB.id;
+
     // Shared target employee used across multiple test groups
     const emp = await prisma.employee.create({
       data: {
@@ -111,6 +188,7 @@ describe('Employee (e2e)', () => {
         password: await bcrypt.hash('Test1234!', 10),
         firstName: 'Target',
         lastName: 'Employee',
+        warehouseId: warehouseAId,
       },
     });
     targetEmployeeId = emp.id;
@@ -185,6 +263,24 @@ describe('Employee (e2e)', () => {
         .expect(400);
     });
 
+    it('rejects the removed roleIds field on creation', async () => {
+      const email = uniqueEmail('removed-role-ids');
+
+      await request(app.getHttpServer())
+        .post('/api/employee')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          email,
+          password: 'Test1234!',
+          firstName: 'Removed',
+          lastName: 'Field',
+          roleIds: [],
+        })
+        .expect(400);
+
+      expect(await prisma.employee.findUnique({ where: { email } })).toBeNull();
+    });
+
     it('creates employee and returns profile without password', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/employee')
@@ -214,7 +310,7 @@ describe('Employee (e2e)', () => {
     });
 
     it('does not let a non-superadmin assign the protected role', async () => {
-      const token = await tokenFor(['employee:create']);
+      const token = await tokenFor(['employee:create', 'employee:update:roles']);
       const superadminRole = await prisma.employeeRole.findUniqueOrThrow({
         where: { name: 'superadmin' },
       });
@@ -227,13 +323,13 @@ describe('Employee (e2e)', () => {
           password: 'Test1234!',
           firstName: 'Protected',
           lastName: 'Attempt',
-          roleIds: [superadminRole.id],
+          roleAssignments: [{ roleId: superadminRole.id, scopeType: 'GLOBAL' }],
         })
         .expect(403);
     });
 
     it('does not let an employee assign a role with permissions they do not have', async () => {
-      const token = await tokenFor(['employee:create']);
+      const token = await tokenFor(['employee:create', 'employee:update:roles']);
       const roleUpdatePermission = await prisma.employeePermission.findUniqueOrThrow({
         where: { name: 'role:update' },
       });
@@ -256,7 +352,7 @@ describe('Employee (e2e)', () => {
           password: 'Test1234!',
           firstName: 'Escalation',
           lastName: 'Attempt',
-          roleIds: [strongerRole.id],
+          roleAssignments: [{ roleId: strongerRole.id, scopeType: 'GLOBAL' }],
         })
         .expect(403);
 
@@ -264,7 +360,7 @@ describe('Employee (e2e)', () => {
     });
 
     it('does not let an employee assign a role at or above their highest role', async () => {
-      const token = await tokenFor(['employee:create']);
+      const token = await tokenFor(['employee:create', 'employee:update:roles']);
       const higherRole = await prisma.employeeRole.create({
         data: {
           name: `higher-role-${Date.now()}-${counter}`,
@@ -282,11 +378,66 @@ describe('Employee (e2e)', () => {
           password: 'Test1234!',
           firstName: 'Hierarchy',
           lastName: 'Attempt',
-          roleIds: [higherRole.id],
+          roleAssignments: [{ roleId: higherRole.id, scopeType: 'GLOBAL' }],
         })
         .expect(403);
 
       expect(await prisma.employee.findUnique({ where: { email } })).toBeNull();
+    });
+
+    it('uses the role assignment scope instead of the actor home warehouse', async () => {
+      const token = await tokenFor(['employee:create'], uniqueEmail('warehouse-creator'), 1_000, {
+        scopeType: 'WAREHOUSE',
+        scopeWarehouseId: warehouseAId,
+        employeeWarehouseId: warehouseBId,
+      });
+
+      await request(app.getHttpServer())
+        .post('/api/employee')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          email: uniqueEmail('warehouse-a-created'),
+          password: 'Test1234!',
+          firstName: 'Warehouse',
+          lastName: 'Allowed',
+          warehouseId: warehouseAId,
+        })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .post('/api/employee')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          email: uniqueEmail('warehouse-b-denied'),
+          password: 'Test1234!',
+          firstName: 'Warehouse',
+          lastName: 'Denied',
+          warehouseId: warehouseBId,
+        })
+        .expect(403);
+    });
+
+    it('requires employee:update:roles when assigning roles during creation', async () => {
+      const token = await tokenFor(['employee:create']);
+      const role = await prisma.employeeRole.create({
+        data: {
+          name: `create-assignment-${Date.now()}-${counter}`,
+          color: '#abcdef',
+          position: 1,
+        },
+      });
+
+      await request(app.getHttpServer())
+        .post('/api/employee')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          email: uniqueEmail('create-with-role-denied'),
+          password: 'Test1234!',
+          firstName: 'Role',
+          lastName: 'Denied',
+          roleAssignments: [{ roleId: role.id, scopeType: 'GLOBAL' }],
+        })
+        .expect(403);
     });
   });
 
@@ -606,6 +757,619 @@ describe('Employee (e2e)', () => {
       ).toMatchObject({ firstName: 'UpdatedTarget' });
     });
 
+    it('allows a warehouse grant only for employees of that warehouse', async () => {
+      const token = await tokenFor(
+        ['employee:update:info'],
+        uniqueEmail('warehouse-manager'),
+        1_000,
+        {
+          scopeType: 'WAREHOUSE',
+          scopeWarehouseId: warehouseAId,
+          employeeWarehouseId: warehouseBId,
+        },
+      );
+      const sameWarehouse = await employeeAt('same-warehouse', warehouseAId);
+      const otherWarehouse = await employeeAt('other-warehouse', warehouseBId);
+      const unassigned = await employeeAt('unassigned', null);
+
+      await request(app.getHttpServer())
+        .patch(`/api/employee/${sameWarehouse.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ firstName: 'Allowed' })
+        .expect(200);
+
+      await request(app.getHttpServer())
+        .patch(`/api/employee/${otherWarehouse.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ firstName: 'Denied' })
+        .expect(403);
+
+      await request(app.getHttpServer())
+        .patch(`/api/employee/${unassigned.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ firstName: 'Denied' })
+        .expect(403);
+    });
+
+    it('allows a regular globally assigned manager to update every warehouse', async () => {
+      const token = await tokenFor(['employee:update:info'], uniqueEmail('global-manager'), 1_000);
+      const target = await employeeAt('global-manager-target', warehouseBId);
+
+      await request(app.getHttpServer())
+        .patch(`/api/employee/${target.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ firstName: 'GloballyManaged' })
+        .expect(200);
+    });
+
+    it('requires transfer permission and hierarchy coverage for both warehouses', async () => {
+      const allowedToken = await tokenFor(
+        ['employee:update:warehouse'],
+        uniqueEmail('multi-warehouse-manager'),
+        1_000,
+        {
+          scopeType: 'WAREHOUSE',
+          scopeWarehouseId: warehouseAId,
+          additionalWarehouseIds: [warehouseBId],
+        },
+      );
+      const allowedTarget = await employeeAt('transfer-allowed', warehouseAId);
+
+      await request(app.getHttpServer())
+        .patch(`/api/employee/${allowedTarget.id}`)
+        .set('Authorization', `Bearer ${allowedToken}`)
+        .send({ warehouseId: warehouseBId })
+        .expect(200);
+
+      const deniedToken = await tokenFor(
+        ['employee:update:warehouse'],
+        uniqueEmail('single-warehouse-manager'),
+        1_000,
+        {
+          scopeType: 'WAREHOUSE',
+          scopeWarehouseId: warehouseAId,
+        },
+      );
+      const deniedTarget = await employeeAt('transfer-denied', warehouseAId);
+
+      await request(app.getHttpServer())
+        .patch(`/api/employee/${deniedTarget.id}`)
+        .set('Authorization', `Bearer ${deniedToken}`)
+        .send({ warehouseId: warehouseBId })
+        .expect(403);
+
+      expect(
+        await prisma.employee.findUniqueOrThrow({ where: { id: deniedTarget.id } }),
+      ).toMatchObject({ warehouseId: warehouseAId });
+    });
+
+    it('only adds and removes role assignments inside controlled scopes', async () => {
+      const token = await tokenFor(
+        ['employee:update:roles', 'employee:update:info'],
+        uniqueEmail('scoped-role-manager'),
+        1_000,
+        {
+          scopeType: 'WAREHOUSE',
+          scopeWarehouseId: warehouseAId,
+        },
+      );
+      const lowerRole = await prisma.employeeRole.create({
+        data: {
+          name: `scoped-lower-role-${Date.now()}-${counter}`,
+          color: '#123456',
+          position: 10,
+          permissions: {
+            create: {
+              employeePermission: {
+                connect: { name: 'employee:update:info' },
+              },
+            },
+          },
+        },
+      });
+      const target = await employeeAt('scoped-role-target', warehouseAId);
+
+      const assigned = await request(app.getHttpServer())
+        .patch(`/api/employee/${target.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          roleAssignments: [
+            {
+              roleId: lowerRole.id,
+              scopeType: 'WAREHOUSE',
+              warehouseId: warehouseAId,
+            },
+          ],
+        })
+        .expect(200);
+
+      expect(assigned.body.roleAssignments).toEqual([
+        expect.objectContaining({
+          scopeType: 'WAREHOUSE',
+          warehouseId: warehouseAId,
+          employeeRole: expect.objectContaining({ id: lowerRole.id }),
+        }),
+      ]);
+
+      await request(app.getHttpServer())
+        .patch(`/api/employee/${target.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          roleAssignments: [
+            {
+              roleId: lowerRole.id,
+              scopeType: 'WAREHOUSE',
+              warehouseId: warehouseBId,
+            },
+          ],
+        })
+        .expect(403);
+
+      await request(app.getHttpServer())
+        .patch(`/api/employee/${target.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          roleAssignments: [{ roleId: lowerRole.id, scopeType: 'GLOBAL' }],
+        })
+        .expect(403);
+
+      expect(
+        await prisma.employeeRoleAssignment.findMany({
+          where: { employeeId: target.id },
+          select: { employeeRoleId: true, scopeType: true, warehouseId: true },
+        }),
+      ).toEqual([
+        {
+          employeeRoleId: lowerRole.id,
+          scopeType: 'WAREHOUSE',
+          warehouseId: warehouseAId,
+        },
+      ]);
+    });
+
+    it('preserves unchanged role assignment rows when applying a replacement', async () => {
+      const permission = await prisma.employeePermission.findUniqueOrThrow({
+        where: { name: 'employee:update:info' },
+      });
+      const [currentWarehouseARole, nextWarehouseARole, warehouseBRole] = await Promise.all(
+        ['current-a', 'next-a', 'stable-b'].map((suffix) =>
+          prisma.employeeRole.create({
+            data: {
+              name: `diff-role-${suffix}-${Date.now()}-${counter}`,
+              color: '#123456',
+              position: 10,
+              permissions: {
+                create: { employeePermissionId: permission.id },
+              },
+            },
+          }),
+        ),
+      );
+      const target = await employeeAt('diff-role-target', warehouseAId, [
+        {
+          employeeRoleId: currentWarehouseARole.id,
+          scopeType: 'WAREHOUSE',
+          warehouseId: warehouseAId,
+        },
+        {
+          employeeRoleId: warehouseBRole.id,
+          scopeType: 'WAREHOUSE',
+          warehouseId: warehouseBId,
+        },
+      ]);
+      const stableBefore = await prisma.employeeRoleAssignment.findFirstOrThrow({
+        where: {
+          employeeId: target.id,
+          employeeRoleId: warehouseBRole.id,
+          scopeType: 'WAREHOUSE',
+          warehouseId: warehouseBId,
+        },
+      });
+      const requestedAssignments = [
+        {
+          roleId: nextWarehouseARole.id,
+          scopeType: 'WAREHOUSE',
+          warehouseId: warehouseAId,
+        },
+        {
+          roleId: warehouseBRole.id,
+          scopeType: 'WAREHOUSE',
+          warehouseId: warehouseBId,
+        },
+      ];
+
+      await request(app.getHttpServer())
+        .patch(`/api/employee/${target.id}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ roleAssignments: requestedAssignments })
+        .expect(200);
+
+      const stableAfterChange = await prisma.employeeRoleAssignment.findFirstOrThrow({
+        where: {
+          employeeId: target.id,
+          employeeRoleId: warehouseBRole.id,
+          scopeType: 'WAREHOUSE',
+          warehouseId: warehouseBId,
+        },
+      });
+      expect(stableAfterChange).toMatchObject({
+        id: stableBefore.id,
+        updatedAt: stableBefore.updatedAt,
+      });
+      expect(
+        await prisma.employeeRoleAssignment.count({
+          where: {
+            employeeId: target.id,
+            employeeRoleId: currentWarehouseARole.id,
+          },
+        }),
+      ).toBe(0);
+
+      await request(app.getHttpServer())
+        .patch(`/api/employee/${target.id}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ roleAssignments: requestedAssignments })
+        .expect(200);
+
+      expect(
+        await prisma.employeeRoleAssignment.findUniqueOrThrow({
+          where: { id: stableBefore.id },
+        }),
+      ).toMatchObject({ updatedAt: stableBefore.updatedAt });
+    });
+
+    it('does not let a warehouse manager remove a role from another scope', async () => {
+      const token = await tokenFor(
+        ['employee:update:roles'],
+        uniqueEmail('role-removal-manager'),
+        1_000,
+        {
+          scopeType: 'WAREHOUSE',
+          scopeWarehouseId: warehouseAId,
+        },
+      );
+      const lowerRole = await prisma.employeeRole.create({
+        data: {
+          name: `other-scope-role-${Date.now()}-${counter}`,
+          color: '#654321',
+          position: 10,
+          permissions: {
+            create: {
+              employeePermission: {
+                connect: { name: 'employee:update:info' },
+              },
+            },
+          },
+        },
+      });
+      const target = await employeeAt('role-removal-target', warehouseAId, [
+        {
+          employeeRoleId: lowerRole.id,
+          scopeType: 'WAREHOUSE',
+          warehouseId: warehouseBId,
+        },
+      ]);
+
+      await request(app.getHttpServer())
+        .patch(`/api/employee/${target.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ roleAssignments: [] })
+        .expect(403);
+
+      expect(
+        await prisma.employeeRoleAssignment.count({
+          where: { employeeId: target.id, employeeRoleId: lowerRole.id },
+        }),
+      ).toBe(1);
+    });
+
+    it('does not let a lower warehouse manager change assignments of a higher employee', async () => {
+      const [manageRolesPermission, scopedPermission] = await Promise.all([
+        prisma.employeePermission.findUniqueOrThrow({
+          where: { name: 'employee:update:roles' },
+        }),
+        prisma.employeePermission.findUniqueOrThrow({
+          where: { name: 'employee:update:info' },
+        }),
+      ]);
+      const [actorHomeRole, actorOtherWarehouseRole, targetHigherRole, targetLowerRole] =
+        await Promise.all([
+          prisma.employeeRole.create({
+            data: {
+              name: `cross-scope-actor-home-${Date.now()}-${counter}`,
+              color: '#111111',
+              position: 200,
+              permissions: {
+                create: { employeePermissionId: manageRolesPermission.id },
+              },
+            },
+          }),
+          prisma.employeeRole.create({
+            data: {
+              name: `cross-scope-actor-other-${Date.now()}-${counter}`,
+              color: '#222222',
+              position: 60,
+              permissions: {
+                create: { employeePermissionId: manageRolesPermission.id },
+              },
+            },
+          }),
+          prisma.employeeRole.create({
+            data: {
+              name: `cross-scope-target-higher-${Date.now()}-${counter}`,
+              color: '#333333',
+              position: 100,
+              permissions: {
+                create: { employeePermissionId: scopedPermission.id },
+              },
+            },
+          }),
+          prisma.employeeRole.create({
+            data: {
+              name: `cross-scope-target-lower-${Date.now()}-${counter}`,
+              color: '#444444',
+              position: 50,
+              permissions: {
+                create: { employeePermissionId: scopedPermission.id },
+              },
+            },
+          }),
+        ]);
+      const actorEmail = uniqueEmail('cross-scope-assignment-actor');
+      const password = 'Test1234!';
+      await prisma.employee.create({
+        data: {
+          email: actorEmail,
+          password: await bcrypt.hash(password, 10),
+          firstName: 'CrossScope',
+          lastName: 'Actor',
+          warehouseId: warehouseAId,
+          roleAssignments: {
+            create: [
+              {
+                employeeRoleId: actorHomeRole.id,
+                scopeType: 'WAREHOUSE',
+                warehouseId: warehouseAId,
+              },
+              {
+                employeeRoleId: actorOtherWarehouseRole.id,
+                scopeType: 'WAREHOUSE',
+                warehouseId: warehouseBId,
+              },
+            ],
+          },
+        },
+      });
+      const login = await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .send({ email: actorEmail, password })
+        .expect(200);
+      const target = await employeeAt('cross-scope-assignment-target', warehouseAId, [
+        {
+          employeeRoleId: targetHigherRole.id,
+          scopeType: 'WAREHOUSE',
+          warehouseId: warehouseBId,
+        },
+        {
+          employeeRoleId: targetLowerRole.id,
+          scopeType: 'WAREHOUSE',
+          warehouseId: warehouseBId,
+        },
+      ]);
+
+      await request(app.getHttpServer())
+        .patch(`/api/employee/${target.id}`)
+        .set('Authorization', `Bearer ${login.body.access_token}`)
+        .send({
+          roleAssignments: [
+            {
+              roleId: targetHigherRole.id,
+              scopeType: 'WAREHOUSE',
+              warehouseId: warehouseBId,
+            },
+          ],
+        })
+        .expect(403);
+
+      expect(
+        await prisma.employeeRoleAssignment.count({
+          where: { employeeId: target.id },
+        }),
+      ).toBe(2);
+    });
+
+    it('rejects the removed roleIds field without changing the employee', async () => {
+      const role = await prisma.employeeRole.create({
+        data: {
+          name: `legacy-scope-role-${Date.now()}-${counter}`,
+          color: '#456789',
+          position: 10,
+          permissions: {
+            create: {
+              employeePermission: {
+                connect: { name: 'employee:update:info' },
+              },
+            },
+          },
+        },
+      });
+      const target = await employeeAt('legacy-scope-target', warehouseAId, [
+        {
+          employeeRoleId: role.id,
+          scopeType: 'WAREHOUSE',
+          warehouseId: warehouseAId,
+        },
+      ]);
+
+      await request(app.getHttpServer())
+        .patch(`/api/employee/${target.id}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ firstName: 'MustRollback', roleIds: [role.id] })
+        .expect(400);
+
+      expect(
+        await prisma.employee.findUniqueOrThrow({
+          where: { id: target.id },
+          include: { roleAssignments: true },
+        }),
+      ).toMatchObject({
+        firstName: 'legacy-scope-target',
+        roleAssignments: [
+          expect.objectContaining({
+            scopeType: 'WAREHOUSE',
+            warehouseId: warehouseAId,
+          }),
+        ],
+      });
+    });
+
+    it('does not leak a high warehouse role into another scope hierarchy', async () => {
+      const permission = await prisma.employeePermission.findUniqueOrThrow({
+        where: { name: 'employee:update:info' },
+      });
+      const [highWarehouseRole, lowGlobalRole, protectedTargetRole] = await Promise.all([
+        prisma.employeeRole.create({
+          data: {
+            name: `high-warehouse-role-${Date.now()}-${counter}`,
+            color: '#111111',
+            position: 100,
+            permissions: {
+              create: { employeePermissionId: permission.id },
+            },
+          },
+        }),
+        prisma.employeeRole.create({
+          data: {
+            name: `low-global-role-${Date.now()}-${counter}`,
+            color: '#222222',
+            position: 10,
+            permissions: {
+              create: { employeePermissionId: permission.id },
+            },
+          },
+        }),
+        prisma.employeeRole.create({
+          data: {
+            name: `protected-target-role-${Date.now()}-${counter}`,
+            color: '#333333',
+            position: 50,
+            permissions: {
+              create: { employeePermissionId: permission.id },
+            },
+          },
+        }),
+      ]);
+      const actorEmail = uniqueEmail('contextual-hierarchy-actor');
+      const password = 'Test1234!';
+      await prisma.employee.create({
+        data: {
+          email: actorEmail,
+          password: await bcrypt.hash(password, 10),
+          firstName: 'Contextual',
+          lastName: 'Actor',
+          warehouseId: warehouseAId,
+          roleAssignments: {
+            create: [
+              {
+                employeeRoleId: highWarehouseRole.id,
+                scopeType: 'WAREHOUSE',
+                warehouseId: warehouseAId,
+              },
+              {
+                employeeRoleId: lowGlobalRole.id,
+                scopeType: 'GLOBAL',
+              },
+            ],
+          },
+        },
+      });
+      const login = await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .send({ email: actorEmail, password })
+        .expect(200);
+      const target = await employeeAt('contextual-hierarchy-target', warehouseBId, [
+        {
+          employeeRoleId: protectedTargetRole.id,
+          scopeType: 'WAREHOUSE',
+          warehouseId: warehouseBId,
+        },
+      ]);
+
+      await request(app.getHttpServer())
+        .patch(`/api/employee/${target.id}`)
+        .set('Authorization', `Bearer ${login.body.access_token}`)
+        .send({ firstName: 'Forbidden' })
+        .expect(403);
+    });
+
+    it('rejects a warehouse binding for a role containing global-only permissions', async () => {
+      const globalPermission = await prisma.employeePermission.findUniqueOrThrow({
+        where: { name: 'role:update' },
+      });
+      const globalRole = await prisma.employeeRole.create({
+        data: {
+          name: `global-only-role-${Date.now()}-${counter}`,
+          color: '#999999',
+          position: 1,
+          permissions: {
+            create: { employeePermissionId: globalPermission.id },
+          },
+        },
+      });
+      const target = await employeeAt('global-only-binding-target', warehouseAId);
+
+      await request(app.getHttpServer())
+        .patch(`/api/employee/${target.id}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          roleAssignments: [
+            {
+              roleId: globalRole.id,
+              scopeType: 'WAREHOUSE',
+              warehouseId: warehouseAId,
+            },
+          ],
+        })
+        .expect(400);
+    });
+
+    it('rejects redundant global and warehouse bindings for the same role', async () => {
+      const role = await prisma.employeeRole.create({
+        data: {
+          name: `overlapping-scope-role-${Date.now()}-${counter}`,
+          color: '#987654',
+          position: 1,
+          permissions: {
+            create: {
+              employeePermission: {
+                connect: { name: 'employee:update:info' },
+              },
+            },
+          },
+        },
+      });
+      const target = await employeeAt('overlapping-scope-target', warehouseAId);
+
+      await request(app.getHttpServer())
+        .patch(`/api/employee/${target.id}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          roleAssignments: [
+            { roleId: role.id, scopeType: 'GLOBAL' },
+            {
+              roleId: role.id,
+              scopeType: 'WAREHOUSE',
+              warehouseId: warehouseAId,
+            },
+          ],
+        })
+        .expect(400);
+
+      expect(await prisma.employeeRoleAssignment.count({ where: { employeeId: target.id } })).toBe(
+        0,
+      );
+    });
+
     it('does not let a non-superadmin change a protected account', async () => {
       const token = await tokenFor(['employee:update:password']);
       await request(app.getHttpServer())
@@ -635,7 +1399,9 @@ describe('Employee (e2e)', () => {
           password: await bcrypt.hash('Test1234!', 10),
           firstName: 'Equal',
           lastName: 'Target',
-          roleAssignments: { create: { employeeRoleId: equalRole.id } },
+          roleAssignments: {
+            create: { employeeRoleId: equalRole.id, scopeType: 'GLOBAL' },
+          },
         },
       });
 
@@ -650,7 +1416,7 @@ describe('Employee (e2e)', () => {
       ).toMatchObject({ firstName: 'Equal' });
     });
 
-    it('syncs roles atomically when roleIds provided', async () => {
+    it('syncs scoped role assignments atomically', async () => {
       const role = await prisma.employeeRole.create({
         data: { name: `synced-role-${Date.now()}`, color: '#ff0000' },
       });
@@ -658,11 +1424,15 @@ describe('Employee (e2e)', () => {
       const res = await request(app.getHttpServer())
         .patch(`/api/employee/${targetEmployeeId}`)
         .set('Authorization', `Bearer ${adminToken}`)
-        .send({ roleIds: [role.id] })
+        .send({ roleAssignments: [{ roleId: role.id, scopeType: 'GLOBAL' }] })
         .expect(200);
 
       expect(res.body.roleAssignments).toHaveLength(1);
       expect(res.body.roleAssignments[0].employeeRole.id).toBe(role.id);
+      expect(res.body.roleAssignments[0]).toMatchObject({
+        scopeType: 'GLOBAL',
+        warehouseId: null,
+      });
     });
 
     it('keeps existing roles when one requested role does not exist', async () => {
@@ -673,13 +1443,22 @@ describe('Employee (e2e)', () => {
         where: { employeeId: targetEmployeeId },
       });
       await prisma.employeeRoleAssignment.create({
-        data: { employeeId: targetEmployeeId, employeeRoleId: currentRole.id },
+        data: {
+          employeeId: targetEmployeeId,
+          employeeRoleId: currentRole.id,
+          scopeType: 'GLOBAL',
+        },
       });
 
       await request(app.getHttpServer())
         .patch(`/api/employee/${targetEmployeeId}`)
         .set('Authorization', `Bearer ${adminToken}`)
-        .send({ roleIds: [currentRole.id, 2147483647] })
+        .send({
+          roleAssignments: [
+            { roleId: currentRole.id, scopeType: 'GLOBAL' },
+            { roleId: 2147483647, scopeType: 'GLOBAL' },
+          ],
+        })
         .expect(400);
 
       const assignments = await prisma.employeeRoleAssignment.findMany({
@@ -688,11 +1467,11 @@ describe('Employee (e2e)', () => {
       expect(assignments.map(({ employeeRoleId }) => employeeRoleId)).toEqual([currentRole.id]);
     });
 
-    it('clears roles when roleIds is empty array', async () => {
+    it('clears roles when roleAssignments is empty', async () => {
       const res = await request(app.getHttpServer())
         .patch(`/api/employee/${targetEmployeeId}`)
         .set('Authorization', `Bearer ${adminToken}`)
-        .send({ roleIds: [] })
+        .send({ roleAssignments: [] })
         .expect(200);
 
       expect(res.body.roleAssignments).toHaveLength(0);
@@ -707,8 +1486,87 @@ describe('Employee (e2e)', () => {
       await request(app.getHttpServer())
         .patch(`/api/employee/${targetEmployeeId}`)
         .set('Authorization', `Bearer ${token}`)
-        .send({ roleIds: [superadminRole.id] })
+        .send({ roleAssignments: [{ roleId: superadminRole.id, scopeType: 'GLOBAL' }] })
         .expect(403);
+    });
+
+    it('does not remove the last global superadmin assignment', async () => {
+      await request(app.getHttpServer())
+        .patch(`/api/employee/${adminEmployeeId}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ roleAssignments: [] })
+        .expect(403);
+    });
+
+    it('allows removing a superadmin assignment when another active superadmin remains', async () => {
+      const superadminRole = await prisma.employeeRole.findUniqueOrThrow({
+        where: { name: 'superadmin' },
+      });
+      const secondSuperadmin = await prisma.employee.create({
+        data: {
+          email: uniqueEmail('second-superadmin'),
+          password: await bcrypt.hash('Test1234!', 10),
+          firstName: 'Second',
+          lastName: 'Superadmin',
+          roleAssignments: {
+            create: {
+              employeeRoleId: superadminRole.id,
+              scopeType: 'GLOBAL',
+            },
+          },
+        },
+      });
+
+      try {
+        await request(app.getHttpServer())
+          .patch(`/api/employee/${adminEmployeeId}`)
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({ roleAssignments: [] })
+          .expect(200);
+
+        expect(
+          await prisma.employeeRoleAssignment.count({
+            where: {
+              employeeId: adminEmployeeId,
+              employeeRoleId: superadminRole.id,
+            },
+          }),
+        ).toBe(0);
+      } finally {
+        const adminAssignment = await prisma.employeeRoleAssignment.findFirst({
+          where: {
+            employeeId: adminEmployeeId,
+            employeeRoleId: superadminRole.id,
+            scopeType: 'GLOBAL',
+          },
+          select: { id: true },
+        });
+        if (!adminAssignment) {
+          await prisma.employeeRoleAssignment.create({
+            data: {
+              employeeId: adminEmployeeId,
+              employeeRoleId: superadminRole.id,
+              scopeType: 'GLOBAL',
+            },
+          });
+        }
+        await prisma.employeeRoleAssignment.deleteMany({
+          where: { employeeId: secondSuperadmin.id },
+        });
+        await prisma.employee.delete({ where: { id: secondSuperadmin.id } });
+      }
+    });
+
+    it('does not deactivate the last active global superadmin', async () => {
+      await request(app.getHttpServer())
+        .patch(`/api/employee/${adminEmployeeId}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ isActive: false })
+        .expect(403);
+
+      expect(
+        await prisma.employee.findUniqueOrThrow({ where: { id: adminEmployeeId } }),
+      ).toMatchObject({ isActive: true });
     });
 
     it('toggles isActive to false', async () => {
