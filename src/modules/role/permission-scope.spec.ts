@@ -1,8 +1,8 @@
 import { ALL_PERMISSIONS, PERMISSION_SCOPE_POLICIES } from '@meerkapp/wms-contracts';
 import {
   getAllowedScopeTypes,
+  getGrantedPermissionsForAssignment,
   getPermissionScopePolicy,
-  isPermissionGrantedByScope,
   isRoleAssignmentScopeAllowed,
 } from './permission-scope';
 
@@ -17,26 +17,38 @@ describe('permission scope policy', () => {
       'GLOBAL',
       'WAREHOUSE',
     ]);
+    expect(getAllowedScopeTypes(['employee:update:info', 'role:update'])).toEqual([
+      'GLOBAL',
+      'WAREHOUSE',
+    ]);
     expect(getAllowedScopeTypes(['role:update'])).toEqual(['GLOBAL']);
     expect(getAllowedScopeTypes(['employee:update:own:avatar'])).toEqual(['GLOBAL']);
     expect(getAllowedScopeTypes([])).toEqual(['GLOBAL']);
   });
 
-  it('keeps self permissions scope-neutral and rejects unknown permissions', () => {
-    expect(isPermissionGrantedByScope('employee:update:own:avatar', 'WAREHOUSE')).toBe(true);
-    expect(isPermissionGrantedByScope('role:update', 'WAREHOUSE')).toBe(false);
-    expect(isPermissionGrantedByScope('unknown:permission', 'GLOBAL')).toBe(false);
+  it('keeps self and system-wide permissions active in a mixed warehouse assignment', () => {
+    expect(
+      getGrantedPermissionsForAssignment('WAREHOUSE', 'warehouse manager', [
+        'employee:update:info',
+        'role:update',
+        'employee:update:own:avatar',
+      ]),
+    ).toEqual(['employee:update:info', 'role:update', 'employee:update:own:avatar']);
+    expect(
+      getGrantedPermissionsForAssignment('WAREHOUSE', 'system manager', ['role:update']),
+    ).toBeNull();
+    expect(getGrantedPermissionsForAssignment('GLOBAL', 'unknown', ['unknown:permission'])).toEqual(
+      [],
+    );
     expect(getPermissionScopePolicy('unknown:permission')).toBeNull();
   });
 
   it('only permits the protected role as a global assignment', () => {
-    expect(
-      isRoleAssignmentScopeAllowed('WAREHOUSE', 'superadmin', [
-        'employee:update:info',
-      ]),
-    ).toBe(false);
-    expect(
-      isRoleAssignmentScopeAllowed('GLOBAL', 'superadmin', ['employee:update:info']),
-    ).toBe(true);
+    expect(isRoleAssignmentScopeAllowed('WAREHOUSE', 'superadmin', ['employee:update:info'])).toBe(
+      false,
+    );
+    expect(isRoleAssignmentScopeAllowed('GLOBAL', 'superadmin', ['employee:update:info'])).toBe(
+      true,
+    );
   });
 });

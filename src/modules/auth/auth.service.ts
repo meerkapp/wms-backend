@@ -7,7 +7,7 @@ import { Response } from 'express';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { RedisService } from '../../common/redis/redis.service';
 import { StorageService } from '../../common/storage/storage.service';
-import { isPermissionGrantedByScope } from '../role/permission-scope';
+import { getGrantedPermissionsForAssignment } from '../role/permission-scope';
 import {
   DEVICE_SESSION_COOKIE,
   DEVICE_SESSION_TTL_MS,
@@ -255,6 +255,7 @@ export class AuthService {
     roleAssignments: Array<{
       scopeType: 'GLOBAL' | 'WAREHOUSE';
       employeeRole: {
+        name: string;
         permissions: Array<{
           employeePermission: { name: string };
         }>;
@@ -263,11 +264,17 @@ export class AuthService {
   }): string[] {
     const permissionSet = new Set<string>();
     for (const assignment of employee.roleAssignments) {
-      for (const rolePermission of assignment.employeeRole.permissions) {
-        const permission = rolePermission.employeePermission.name;
-        if (isPermissionGrantedByScope(permission, assignment.scopeType)) {
-          permissionSet.add(permission);
-        }
+      const permissionNames = assignment.employeeRole.permissions.map(
+        ({ employeePermission }) => employeePermission.name,
+      );
+      const grantedPermissions = getGrantedPermissionsForAssignment(
+        assignment.scopeType,
+        assignment.employeeRole.name,
+        permissionNames,
+      );
+      if (grantedPermissions === null) continue;
+      for (const permission of grantedPermissions) {
+        permissionSet.add(permission);
       }
     }
     return Array.from(permissionSet);

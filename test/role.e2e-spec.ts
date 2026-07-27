@@ -118,7 +118,7 @@ describe('Role authorization (e2e)', () => {
     ]);
   });
 
-  it('reports allowed scopes and protects existing warehouse assignments', async () => {
+  it('allows mixed roles while protecting warehouse assignments from losing their scoped part', async () => {
     const [employeeUpdateInfo, roleUpdate] = await Promise.all([
       prisma.employeePermission.findUniqueOrThrow({
         where: { name: 'employee:update:info' },
@@ -144,6 +144,16 @@ describe('Role authorization (e2e)', () => {
         position: 11,
         permissions: {
           create: { employeePermissionId: roleUpdate.id },
+        },
+      },
+    });
+    const warehouseLeadRole = await prisma.employeeRole.create({
+      data: {
+        name: roleName('warehouse-lead'),
+        color: '#0f172a',
+        position: 100,
+        permissions: {
+          create: { employeePermissionId: employeeUpdateInfo.id },
         },
       },
     });
@@ -180,18 +190,26 @@ describe('Role authorization (e2e)', () => {
         localityId: locality.id,
       },
     });
+    const scopedActorEmail = `${roleName('binding')}@e2e.test`;
     await prisma.employee.create({
       data: {
-        email: `${roleName('binding')}@e2e.test`,
+        email: scopedActorEmail,
         password: await bcrypt.hash('Test1234!', 10),
         firstName: 'Scoped',
         lastName: 'Binding',
         roleAssignments: {
-          create: {
-            employeeRoleId: scopedRole.id,
-            scopeType: 'WAREHOUSE',
-            warehouseId: warehouse.id,
-          },
+          create: [
+            {
+              employeeRoleId: scopedRole.id,
+              scopeType: 'WAREHOUSE',
+              warehouseId: warehouse.id,
+            },
+            {
+              employeeRoleId: warehouseLeadRole.id,
+              scopeType: 'WAREHOUSE',
+              warehouseId: warehouse.id,
+            },
+          ],
         },
       },
     });
@@ -200,14 +218,55 @@ describe('Role authorization (e2e)', () => {
       .patch(`/api/role/${scopedRole.id}`)
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ permissionIds: [employeeUpdateInfo.id, roleUpdate.id] })
-      .expect(400);
+      .expect(200);
+
+    const scopedActorLogin = await request(app.getHttpServer())
+      .post('/api/auth/login')
+      .send({ email: scopedActorEmail, password: 'Test1234!' })
+      .expect(200);
+    const lowerRole = await prisma.employeeRole.create({
+      data: {
+        name: roleName('mixed-role-lower-target'),
+        color: '#334155',
+        position: warehouseLeadRole.position - 1,
+      },
+    });
+    await request(app.getHttpServer())
+      .patch(`/api/role/${lowerRole.id}`)
+      .set('Authorization', `Bearer ${scopedActorLogin.body.access_token}`)
+      .send({ color: '#abcdef' })
+      .expect(200);
 
     expect(
       await prisma.employeeRolePermission.findMany({
         where: { employeeRoleId: scopedRole.id },
         select: { employeePermissionId: true },
+        orderBy: { employeePermissionId: 'asc' },
       }),
-    ).toEqual([{ employeePermissionId: employeeUpdateInfo.id }]);
+    ).toEqual(
+      [employeeUpdateInfo.id, roleUpdate.id]
+        .sort((left, right) => left - right)
+        .map((employeePermissionId) => ({ employeePermissionId })),
+    );
+
+    await request(app.getHttpServer())
+      .patch(`/api/role/${scopedRole.id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ permissionIds: [roleUpdate.id] })
+      .expect(400);
+
+    const mixedRole = await request(app.getHttpServer())
+      .get(`/api/role/${scopedRole.id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    expect(mixedRole.body).toMatchObject({
+      allowedScopeTypes: ['GLOBAL', 'WAREHOUSE'],
+    });
+    expect(
+      (mixedRole.body.permissions as Array<{ employeePermission: { id: number } }>).map(
+        ({ employeePermission }) => employeePermission.id,
+      ),
+    ).toEqual(expect.arrayContaining([employeeUpdateInfo.id, roleUpdate.id]));
   });
 
   it('enforces role assignment scope invariants in the database', async () => {
@@ -303,7 +362,7 @@ describe('Role authorization (e2e)', () => {
         permissions: {
           create: {
             employeePermission: {
-              connect: { name: 'role:update' },
+              connect: { name: 'role:create' },
             },
           },
         },
@@ -327,6 +386,16 @@ describe('Role authorization (e2e)', () => {
     });
 
     try {
+      const login = await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .send({ email: employee.email, password: 'Test1234!' })
+        .expect(200);
+      await request(app.getHttpServer())
+        .post('/api/role')
+        .set('Authorization', `Bearer ${login.body.access_token}`)
+        .send({ name: roleName('must-not-create'), color: '#111111' })
+        .expect(403);
+
       await expect(app.get(PermissionsSyncService).sync()).rejects.toThrow(
         'Invalid warehouse role assignments',
       );

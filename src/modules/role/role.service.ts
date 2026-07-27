@@ -117,16 +117,14 @@ export class RoleService {
         );
         if (
           requestedPermissions !== undefined &&
-          !getAllowedScopeTypes(requestedPermissions.map(({ name }) => name)).includes(
-            'WAREHOUSE',
-          )
+          !getAllowedScopeTypes(requestedPermissions.map(({ name }) => name)).includes('WAREHOUSE')
         ) {
           const scopedAssignmentCount = await tx.employeeRoleAssignment.count({
             where: { employeeRoleId: id, scopeType: 'WAREHOUSE' },
           });
           if (scopedAssignmentCount > 0) {
             throw new BadRequestException(
-              'Remove warehouse role assignments before adding global-only permissions',
+              'Remove warehouse role assignments before removing the last resource-scoped permission',
             );
           }
         }
@@ -184,7 +182,7 @@ export class RoleService {
 
       const highestManagedPosition = access.isSuperadmin
         ? manageableRoles.length
-        : this.hierarchy.getEffectiveRolePosition(access, { warehouseId: null })! - 1;
+        : this.hierarchy.getEffectiveSystemWidePosition(access, 'role:update')! - 1;
       for (const [index, roleId] of dto.roleIds.entries()) {
         await tx.employeeRole.update({
           where: { id: roleId },

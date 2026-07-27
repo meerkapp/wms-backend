@@ -1302,35 +1302,89 @@ describe('Employee (e2e)', () => {
         .expect(403);
     });
 
-    it('rejects a warehouse binding for a role containing global-only permissions', async () => {
-      const globalPermission = await prisma.employeePermission.findUniqueOrThrow({
-        where: { name: 'role:update' },
-      });
-      const globalRole = await prisma.employeeRole.create({
+    it('grants system-wide permissions globally while restricting resource permissions to the warehouse', async () => {
+      const [systemPermission, scopedPermission] = await Promise.all([
+        prisma.employeePermission.findUniqueOrThrow({
+          where: { name: 'role:create' },
+        }),
+        prisma.employeePermission.findUniqueOrThrow({
+          where: { name: 'employee:update:info' },
+        }),
+      ]);
+      const mixedRole = await prisma.employeeRole.create({
         data: {
-          name: `global-only-role-${Date.now()}-${counter}`,
+          name: `mixed-scope-role-${Date.now()}-${counter}`,
           color: '#999999',
-          position: 1,
+          position: 100,
           permissions: {
-            create: { employeePermissionId: globalPermission.id },
+            create: [
+              { employeePermissionId: systemPermission.id },
+              { employeePermissionId: scopedPermission.id },
+            ],
           },
         },
       });
-      const target = await employeeAt('global-only-binding-target', warehouseAId);
-
-      await request(app.getHttpServer())
-        .patch(`/api/employee/${target.id}`)
-        .set('Authorization', `Bearer ${adminToken}`)
-        .send({
-          roleAssignments: [
-            {
-              roleId: globalRole.id,
+      const actorEmail = uniqueEmail('mixed-scope-actor');
+      const actor = await prisma.employee.create({
+        data: {
+          email: actorEmail,
+          password: await bcrypt.hash('Test1234!', 10),
+          firstName: 'MixedScope',
+          lastName: 'Actor',
+          warehouseId: warehouseAId,
+          roleAssignments: {
+            create: {
+              employeeRoleId: mixedRole.id,
               scopeType: 'WAREHOUSE',
               warehouseId: warehouseAId,
             },
-          ],
+          },
+        },
+      });
+      const login = await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .send({ email: actorEmail, password: 'Test1234!' })
+        .expect(200);
+      const token = login.body.access_token as string;
+      const [sameWarehouseTarget, otherWarehouseTarget] = await Promise.all([
+        employeeAt('mixed-scope-same-warehouse', warehouseAId),
+        employeeAt('mixed-scope-other-warehouse', warehouseBId),
+      ]);
+
+      await request(app.getHttpServer())
+        .post('/api/role')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          name: `created-by-mixed-scope-${Date.now()}-${counter}`,
+          color: '#778899',
         })
-        .expect(400);
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .patch(`/api/employee/${sameWarehouseTarget.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ firstName: 'Allowed' })
+        .expect(200);
+
+      await request(app.getHttpServer())
+        .patch(`/api/employee/${otherWarehouseTarget.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ firstName: 'Forbidden' })
+        .expect(403);
+
+      expect(
+        await prisma.employee.findUniqueOrThrow({
+          where: { id: actor.id },
+          select: { roleAssignments: true },
+        }),
+      ).toMatchObject({
+        roleAssignments: [
+          expect.objectContaining({
+            scopeType: 'WAREHOUSE',
+            warehouseId: warehouseAId,
+          }),
+        ],
+      });
     });
 
     it('rejects redundant global and warehouse bindings for the same role', async () => {

@@ -14,25 +14,14 @@ export function getPermissionScopePolicy(permission: string): PermissionScopePol
   return PERMISSION_SCOPE_POLICIES[permission as Permission];
 }
 
-export function isPermissionGrantedByScope(
-  permission: string,
-  scopeType: AccessScopeType,
-): boolean {
-  const policy = getPermissionScopePolicy(permission);
-  if (!policy) return false;
-  if (scopeType === 'GLOBAL') return true;
-
-  return policy === 'RESOURCE_SCOPED' || policy === 'SELF';
-}
-
 export function getAllowedScopeTypes(permissionNames: readonly string[]): AccessScopeType[] {
   const policies = permissionNames.map(getPermissionScopePolicy);
-  const requiresGlobal = policies.some(
-    (policy) => policy !== 'RESOURCE_SCOPED' && policy !== 'SELF',
-  );
+  const hasUnknownPermission = policies.includes(null);
   const hasResourceScopedPermission = policies.includes('RESOURCE_SCOPED');
 
-  return requiresGlobal || !hasResourceScopedPermission ? ['GLOBAL'] : [...ACCESS_SCOPE_TYPES];
+  return !hasUnknownPermission && hasResourceScopedPermission
+    ? [...ACCESS_SCOPE_TYPES]
+    : ['GLOBAL'];
 }
 
 export function isScopeAllowedForPermissions(
@@ -51,4 +40,13 @@ export function isRoleAssignmentScopeAllowed(
     isScopeAllowedForPermissions(scopeType, permissionNames) &&
     (scopeType === 'GLOBAL' || roleName !== PROTECTED_ROLE_NAME)
   );
+}
+
+export function getGrantedPermissionsForAssignment(
+  scopeType: AccessScopeType,
+  roleName: string,
+  permissionNames: readonly string[],
+): string[] | null {
+  if (!isRoleAssignmentScopeAllowed(scopeType, roleName, permissionNames)) return null;
+  return permissionNames.filter((permission) => getPermissionScopePolicy(permission) !== null);
 }

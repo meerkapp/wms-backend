@@ -10,9 +10,8 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { PROTECTED_ROLE_NAME } from './role-hierarchy.constants';
 import {
   getAllowedScopeTypes,
+  getGrantedPermissionsForAssignment,
   getPermissionScopePolicy,
-  isPermissionGrantedByScope,
-  isRoleAssignmentScopeAllowed,
   isScopeAllowedForPermissions,
 } from './permission-scope';
 
@@ -126,12 +125,12 @@ export class RoleHierarchyService {
       const permissionNames = employeeRole.permissions.map(
         ({ employeePermission }) => employeePermission.name,
       );
-      const isValidAssignment = isRoleAssignmentScopeAllowed(
+      const grantedPermissions = getGrantedPermissionsForAssignment(
         scopeType,
         employeeRole.name,
         permissionNames,
       );
-      if (!isValidAssignment) return [];
+      if (grantedPermissions === null) return [];
 
       return [
         {
@@ -141,11 +140,7 @@ export class RoleHierarchyService {
             id: employeeRole.id,
             name: employeeRole.name,
             position: employeeRole.position,
-            permissions: new Set(
-              permissionNames.filter((permission) =>
-                isPermissionGrantedByScope(permission, scopeType),
-              ),
-            ),
+            permissions: new Set(grantedPermissions),
           },
         },
       ];
@@ -174,8 +169,11 @@ export class RoleHierarchyService {
       return access.grants.some(({ employeeRole }) => employeeRole.permissions.has(permission));
     }
 
-    const effectiveContext = policy === 'GLOBAL_ONLY' ? { warehouseId: null } : context;
-    return this.grantsForContext(access, effectiveContext).some(({ employeeRole }) =>
+    if (policy === 'SYSTEM_WIDE') {
+      return access.grants.some(({ employeeRole }) => employeeRole.permissions.has(permission));
+    }
+
+    return this.grantsForContext(access, context).some(({ employeeRole }) =>
       employeeRole.permissions.has(permission),
     );
   }
@@ -201,11 +199,33 @@ export class RoleHierarchyService {
     return positions.length === 0 ? null : Math.max(...positions);
   }
 
+  getEffectiveSystemWidePosition(access: ActorRoleAccess, permission: string): number | null {
+    if (getPermissionScopePolicy(permission) !== 'SYSTEM_WIDE') {
+      return null;
+    }
+
+    const sourceContexts = new Map<string, AuthorizationContext>();
+    for (const grant of access.grants) {
+      if (!grant.employeeRole.permissions.has(permission)) continue;
+
+      const warehouseId = grant.scopeType === 'GLOBAL' ? null : grant.warehouseId;
+      sourceContexts.set(warehouseId === null ? 'GLOBAL' : `WAREHOUSE:${warehouseId}`, {
+        warehouseId,
+      });
+    }
+
+    const positions = [...sourceContexts.values()].flatMap((context) => {
+      const position = this.getEffectiveRolePosition(access, context);
+      return position === null ? [] : [position];
+    });
+    return positions.length === 0 ? null : Math.max(...positions);
+  }
+
   canManageRole(access: ActorRoleAccess, role: HierarchicalRole): boolean {
     if (role.name === PROTECTED_ROLE_NAME) return false;
     if (access.isSuperadmin) return true;
 
-    const highestPosition = this.getEffectiveRolePosition(access, { warehouseId: null });
+    const highestPosition = this.getEffectiveSystemWidePosition(access, 'role:update');
     return highestPosition !== null && role.position < highestPosition;
   }
 
@@ -238,14 +258,15 @@ export class RoleHierarchyService {
         role.position < position &&
         permissionNames.every((permission) =>
           this.hasPermissionInContext(access, permission, context),
-        )
+        ) &&
+        this.canDelegateRoleHierarchy(access, role)
       );
     });
   }
 
   assertCanManageRole(access: ActorRoleAccess, role: HierarchicalRole): void {
     if (!this.canManageRole(access, role)) {
-      throw new ForbiddenException('Cannot manage a role at or above your highest global role');
+      throw new ForbiddenException('Cannot manage a role at or above your effective role position');
     }
   }
 
@@ -391,9 +412,7 @@ export class RoleHierarchyService {
         ({ employeePermission }) => employeePermission.name,
       );
       if (!isScopeAllowedForPermissions(assignment.scopeType, permissionNames)) {
-        throw new BadRequestException(
-          `Role ${role.id} contains permissions that require a global assignment`,
-        );
+        throw new BadRequestException(`Role ${role.id} has no resource-scoped permissions`);
       }
       if (role.name === PROTECTED_ROLE_NAME && assignment.scopeType !== 'GLOBAL') {
         throw new BadRequestException('The protected role must be assigned globally');
@@ -508,6 +527,21 @@ export class RoleHierarchyService {
         'Cannot assign a role containing permissions you do not have in this scope',
       );
     }
+    if (!this.canDelegateRoleHierarchy(access, role)) {
+      throw new ForbiddenException(
+        'Cannot assign role management at or above your effective role position',
+      );
+    }
+  }
+
+  private canDelegateRoleHierarchy(
+    access: ActorRoleAccess,
+    role: AssignableRole | RoleWithPermissions,
+  ): boolean {
+    const grantsRoleManagement = role.permissions.some(
+      ({ employeePermission }) => employeePermission.name === 'role:update',
+    );
+    return !grantsRoleManagement || this.canManageRole(access, role);
   }
 
   private async assertWarehousesExist(
