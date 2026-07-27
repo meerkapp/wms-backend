@@ -50,16 +50,16 @@ export const ALL_PERMISSIONS = [
 
 export type Permission = (typeof ALL_PERMISSIONS)[number];
 
-export const PERMISSION_SCOPE_POLICY_TYPES = ['RESOURCE_SCOPED', 'GLOBAL_ONLY', 'SELF'] as const;
+export const PERMISSION_SCOPE_POLICY_TYPES = ['RESOURCE_SCOPED', 'SYSTEM_WIDE', 'SELF'] as const;
 export const PermissionScopePolicySchema = z.enum(PERMISSION_SCOPE_POLICY_TYPES);
 export type PermissionScopePolicy = z.infer<typeof PermissionScopePolicySchema>;
 
 export const PERMISSION_SCOPE_POLICIES = {
-  'organization:create': 'GLOBAL_ONLY',
-  'organization:update': 'GLOBAL_ONLY',
-  'warehouse:create': 'GLOBAL_ONLY',
-  'warehouse:update': 'GLOBAL_ONLY',
-  'locality:create': 'GLOBAL_ONLY',
+  'organization:create': 'SYSTEM_WIDE',
+  'organization:update': 'SYSTEM_WIDE',
+  'warehouse:create': 'SYSTEM_WIDE',
+  'warehouse:update': 'SYSTEM_WIDE',
+  'locality:create': 'SYSTEM_WIDE',
   'employee:create': 'RESOURCE_SCOPED',
   'employee:update:info': 'RESOURCE_SCOPED',
   'employee:update:warehouse': 'RESOURCE_SCOPED',
@@ -72,22 +72,22 @@ export const PERMISSION_SCOPE_POLICIES = {
   'employee:update:own:email': 'SELF',
   'employee:update:own:password': 'SELF',
   'employee:update:own:avatar': 'SELF',
-  'role:create': 'GLOBAL_ONLY',
-  'role:update': 'GLOBAL_ONLY',
-  'product_type:create': 'GLOBAL_ONLY',
-  'product_type:update': 'GLOBAL_ONLY',
-  'product_item:create': 'GLOBAL_ONLY',
-  'product_item:archive': 'GLOBAL_ONLY',
-  'folder:create': 'GLOBAL_ONLY',
-  'folder:update': 'GLOBAL_ONLY',
-  'folder:delete': 'GLOBAL_ONLY',
-  'folder:pin': 'GLOBAL_ONLY',
-  'product_collection:create': 'GLOBAL_ONLY',
-  'product_collection:update': 'GLOBAL_ONLY',
-  'product_collection:delete': 'GLOBAL_ONLY',
-  'product_collection:pin': 'GLOBAL_ONLY',
-  'price_list:create': 'GLOBAL_ONLY',
-  'price_list:update': 'GLOBAL_ONLY',
+  'role:create': 'SYSTEM_WIDE',
+  'role:update': 'SYSTEM_WIDE',
+  'product_type:create': 'SYSTEM_WIDE',
+  'product_type:update': 'SYSTEM_WIDE',
+  'product_item:create': 'SYSTEM_WIDE',
+  'product_item:archive': 'SYSTEM_WIDE',
+  'folder:create': 'SYSTEM_WIDE',
+  'folder:update': 'SYSTEM_WIDE',
+  'folder:delete': 'SYSTEM_WIDE',
+  'folder:pin': 'SYSTEM_WIDE',
+  'product_collection:create': 'SYSTEM_WIDE',
+  'product_collection:update': 'SYSTEM_WIDE',
+  'product_collection:delete': 'SYSTEM_WIDE',
+  'product_collection:pin': 'SYSTEM_WIDE',
+  'price_list:create': 'SYSTEM_WIDE',
+  'price_list:update': 'SYSTEM_WIDE',
 } as const satisfies Record<Permission, PermissionScopePolicy>;
 
 export const LoginSchema = z.object({
