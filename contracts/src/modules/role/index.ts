@@ -1,11 +1,16 @@
 import { z } from 'zod'
 import { EmployeeRoleModelSchema } from '../../generated/schemas/variants/pure/EmployeeRole.pure'
-import { AccessScopeTypeSchema } from '../auth'
+import { AccessScopeCoverageSchema, AccessScopeTypeSchema, PermissionSchema } from '../auth'
+
+export const ROLE_ERROR_CODES = {
+  warehouseAssignmentsRequireScopedPermission:
+    'ROLE_WAREHOUSE_ASSIGNMENTS_REQUIRE_SCOPED_PERMISSION',
+} as const
 
 export const RolePermissionItemSchema = z.object({
   employeePermission: z.object({
-    id: z.number(),
-    name: z.string(),
+    id: z.number().int().positive(),
+    name: PermissionSchema,
   }),
 })
 
@@ -18,12 +23,21 @@ export const RoleSchema = EmployeeRoleModelSchema
     permissions: z.array(RolePermissionItemSchema),
     allowedScopeTypes: z.array(AccessScopeTypeSchema),
     canManage: z.boolean(),
+    assignableScopes: AccessScopeCoverageSchema,
     canAssign: z
       .boolean()
       .describe('Whether the current employee can assign this role in at least one scope'),
   })
 
 export type Role = z.infer<typeof RoleSchema>
+
+export const RolePermissionOptionSchema = z.object({
+  id: z.number().int().positive(),
+  name: PermissionSchema,
+  canGrant: z.boolean(),
+})
+
+export type RolePermissionOption = z.infer<typeof RolePermissionOptionSchema>
 
 export const CreateRoleSchema = z.object({
   name: z.string().min(1),

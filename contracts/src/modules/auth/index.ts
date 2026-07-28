@@ -4,6 +4,12 @@ export const ACCESS_SCOPE_TYPES = ['GLOBAL', 'WAREHOUSE'] as const;
 export const AccessScopeTypeSchema = z.enum(ACCESS_SCOPE_TYPES);
 export type AccessScopeType = z.infer<typeof AccessScopeTypeSchema>;
 
+export const AccessScopeCoverageSchema = z.object({
+  global: z.boolean(),
+  warehouseIds: z.array(z.number().int().positive()),
+});
+export type AccessScopeCoverage = z.infer<typeof AccessScopeCoverageSchema>;
+
 export const ALL_PERMISSIONS = [
   'organization:create',
   'organization:update',
@@ -48,6 +54,7 @@ export const ALL_PERMISSIONS = [
   'price_list:update',
 ] as const;
 
+export const PermissionSchema = z.enum(ALL_PERMISSIONS);
 export type Permission = (typeof ALL_PERMISSIONS)[number];
 
 export const PERMISSION_SCOPE_POLICY_TYPES = ['RESOURCE_SCOPED', 'SYSTEM_WIDE', 'SELF'] as const;

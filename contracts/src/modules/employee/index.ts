@@ -1,6 +1,18 @@
 import { z } from 'zod'
 import { EmployeeModelSchema } from '../../generated/schemas/variants/pure/Employee.pure'
 import { EmployeeRoleModelSchema } from '../../generated/schemas/variants/pure/EmployeeRole.pure'
+import { AccessScopeCoverageSchema } from '../auth'
+
+export const EMPLOYEE_ERROR_CODES = {
+  invalidRoleAssignments: 'EMPLOYEE_INVALID_ROLE_ASSIGNMENTS',
+} as const
+
+export const EmployeeManagementScopesSchema = z.object({
+  create: AccessScopeCoverageSchema,
+  updateWarehouse: AccessScopeCoverageSchema,
+})
+
+export type EmployeeManagementScopes = z.infer<typeof EmployeeManagementScopesSchema>
 
 export const EmployeeRoleSchema = EmployeeRoleModelSchema
   .omit({ assignments: true, permissions: true })
