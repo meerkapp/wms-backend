@@ -1,5 +1,5 @@
 import { INestApplication } from '@nestjs/common';
-import { EMPLOYEE_ERROR_CODES } from '@meerkapp/wms-contracts';
+import { EMPLOYEE_ERROR_CODES, EmployeeSchema } from '@meerkapp/wms-contracts';
 import * as bcrypt from 'bcrypt';
 import * as request from 'supertest';
 import { App } from 'supertest/types';
@@ -458,6 +458,8 @@ describe('Employee (e2e)', () => {
       expect(res.body).not.toHaveProperty('password');
       expect(res.body).toHaveProperty('roleAssignments');
       expect(res.body).toHaveProperty('avatarUrl');
+      expect(res.body.roleAssignments).not.toHaveLength(0);
+      expect(EmployeeSchema.safeParse(res.body)).toMatchObject({ success: true });
     });
   });
 

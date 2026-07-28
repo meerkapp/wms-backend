@@ -43,6 +43,7 @@ const EMPLOYEE_SELECT = {
           name: true,
           color: true,
           position: true,
+          updatedAt: true,
         },
       },
     },
@@ -237,11 +238,7 @@ export class EmployeeService {
 
     let hashedNewPassword: string | undefined;
     if (newPassword !== undefined) {
-      await this.assertCanManageTargetWithPermission(
-        actorId,
-        id,
-        'employee:update:password',
-      );
+      await this.assertCanManageTargetWithPermission(actorId, id, 'employee:update:password');
       hashedNewPassword = await bcrypt.hash(newPassword, 10);
     }
 
