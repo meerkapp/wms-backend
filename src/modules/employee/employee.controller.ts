@@ -70,6 +70,12 @@ export class EmployeeController {
     return this.employeeService.findOne(user.sub);
   }
 
+  @ApiOperation({ summary: 'Get employee management scopes for the current employee' })
+  @Get('management-scopes')
+  getManagementScopes(@CurrentUser() user: JwtPayload) {
+    return this.employeeService.getManagementScopes(user.sub);
+  }
+
   @ApiOperation({ summary: 'Upload own avatar' })
   @ApiConsumes('multipart/form-data')
   @ApiBody({

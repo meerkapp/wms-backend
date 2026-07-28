@@ -96,6 +96,26 @@ export class EmployeeService {
     private readonly hierarchy: RoleHierarchyService,
   ) {}
 
+  async getManagementScopes(actorId: string) {
+    const [access, warehouses] = await Promise.all([
+      this.hierarchy.getActorAccess(this.prisma, actorId),
+      this.prisma.warehouse.findMany({
+        select: { id: true },
+        orderBy: { id: 'asc' },
+      }),
+    ]);
+    const warehouseIds = warehouses.map(({ id }) => id);
+
+    return {
+      create: this.hierarchy.getPermissionScopeCoverage(access, 'employee:create', warehouseIds),
+      updateWarehouse: this.hierarchy.getPermissionScopeCoverage(
+        access,
+        'employee:update:warehouse',
+        warehouseIds,
+      ),
+    };
+  }
+
   async create(dto: CreateEmployeeDto, actorId: string) {
     const { password, roleAssignments, ...employeeData } = dto;
     const requestedAssignments = normalizeRoleAssignments(roleAssignments) ?? [];

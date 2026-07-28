@@ -1,4 +1,5 @@
 import { INestApplication } from '@nestjs/common';
+import { EMPLOYEE_ERROR_CODES } from '@meerkapp/wms-contracts';
 import * as bcrypt from 'bcrypt';
 import * as request from 'supertest';
 import { App } from 'supertest/types';
@@ -698,6 +699,37 @@ describe('Employee (e2e)', () => {
   });
 
   // ---------------------------------------------------------------------------
+  describe('GET /api/employee/management-scopes', () => {
+    it('returns only the warehouses covered by the current assignments', async () => {
+      const token = await tokenFor(
+        ['employee:create', 'employee:update:warehouse'],
+        uniqueEmail('management-scopes'),
+        1_000,
+        {
+          scopeType: 'WAREHOUSE',
+          scopeWarehouseId: warehouseAId,
+        },
+      );
+
+      const response = await request(app.getHttpServer())
+        .get('/api/employee/management-scopes')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(response.body).toEqual({
+        create: {
+          global: false,
+          warehouseIds: [warehouseAId],
+        },
+        updateWarehouse: {
+          global: false,
+          warehouseIds: [warehouseAId],
+        },
+      });
+    });
+  });
+
+  // ---------------------------------------------------------------------------
   describe('PATCH /api/employee/:id', () => {
     it('returns 401 without token', async () => {
       await request(app.getHttpServer())
@@ -868,6 +900,33 @@ describe('Employee (e2e)', () => {
         },
       });
       const target = await employeeAt('scoped-role-target', warehouseAId);
+
+      const roles = await request(app.getHttpServer())
+        .get('/api/role')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect(
+        (roles.body as Array<{ id: number; assignableScopes: unknown }>).find(
+          ({ id }) => id === lowerRole.id,
+        ),
+      ).toMatchObject({
+        assignableScopes: {
+          global: false,
+          warehouseIds: [warehouseAId],
+        },
+        canAssign: true,
+      });
+
+      const invalidAssignment = await request(app.getHttpServer())
+        .patch(`/api/employee/${target.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          roleAssignments: [{ roleId: 2147483647, scopeType: 'GLOBAL' }],
+        })
+        .expect(400);
+      expect(invalidAssignment.body).toMatchObject({
+        code: EMPLOYEE_ERROR_CODES.invalidRoleAssignments,
+      });
 
       const assigned = await request(app.getHttpServer())
         .patch(`/api/employee/${target.id}`)

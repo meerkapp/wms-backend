@@ -35,8 +35,8 @@ export class RoleController {
 
   @ApiOperation({ summary: 'Get all available permissions' })
   @Get('permissions')
-  findAllPermissions() {
-    return this.roleService.findAllPermissions();
+  findAllPermissions(@CurrentUser() user: JwtPayload) {
+    return this.roleService.findAllPermissions(user.sub);
   }
 
   @ApiOperation({ summary: 'Get role by id' })

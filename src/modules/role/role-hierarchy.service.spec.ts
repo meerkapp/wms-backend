@@ -1,5 +1,5 @@
 import { ForbiddenException } from '@nestjs/common';
-import { AccessScopeType } from '@meerkapp/wms-contracts';
+import { AccessScopeType, EMPLOYEE_ERROR_CODES } from '@meerkapp/wms-contracts';
 import { ActorRoleAccess, RoleHierarchyService } from './role-hierarchy.service';
 
 function roleGrant(
@@ -84,6 +84,20 @@ describe('RoleHierarchyService', () => {
     expect(service.canManageRole(actor, { name: 'lower', position: 9 })).toBe(false);
     expect(service.getEffectiveRolePosition(actor, { warehouseId: 12 })).toBe(10);
     expect(service.getEffectiveRolePosition(actor, { warehouseId: 15 })).toBeNull();
+  });
+
+  it('only delegates resource-scoped permissions held in the global context', () => {
+    const warehouseActor = access(10, {
+      scopeType: 'WAREHOUSE',
+      warehouseId: 12,
+      permissions: ['employee:update:info'],
+    });
+    const globalActor = access(10, {
+      permissions: ['employee:update:info'],
+    });
+
+    expect(service.canDelegatePermission(warehouseActor, 'employee:update:info')).toBe(false);
+    expect(service.canDelegatePermission(globalActor, 'employee:update:info')).toBe(true);
   });
 
   it('uses the granting warehouse role position for a system-wide permission', () => {
@@ -254,6 +268,75 @@ describe('RoleHierarchyService', () => {
     ).toBe(false);
   });
 
+  it('returns only the warehouses where the actor can assign a role', () => {
+    const actor = access(10, {
+      scopeType: 'WAREHOUSE',
+      warehouseId: 12,
+      permissions: ['employee:update:roles', 'employee:update:info'],
+    });
+    const role = {
+      name: 'employee editor',
+      position: 9,
+      permissions: [{ employeePermission: { name: 'employee:update:info' } }],
+    };
+
+    expect(service.getAssignableRoleScopes(actor, role, [12, 15])).toEqual({
+      global: false,
+      warehouseIds: [12],
+    });
+  });
+
+  it('lets a global grant assign a resource-scoped role globally or to any warehouse', () => {
+    const actor = access(10, {
+      permissions: ['employee:update:roles', 'employee:update:info'],
+    });
+    const role = {
+      name: 'employee editor',
+      position: 9,
+      permissions: [{ employeePermission: { name: 'employee:update:info' } }],
+    };
+
+    expect(service.getAssignableRoleScopes(actor, role, [12, 15])).toEqual({
+      global: true,
+      warehouseIds: [12, 15],
+    });
+  });
+
+  it('returns exact permission coverage for management forms', () => {
+    const actor = access(10, {
+      scopeType: 'WAREHOUSE',
+      warehouseId: 12,
+      permissions: ['employee:create'],
+    });
+
+    expect(service.getPermissionScopeCoverage(actor, 'employee:create', [12, 15])).toEqual({
+      global: false,
+      warehouseIds: [12],
+    });
+  });
+
+  it('returns a structured error for invalid role assignments', async () => {
+    const client = {
+      employeeRole: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+    };
+
+    await expect(
+      service.authorizeRoleAssignmentReplacement(
+        client as never,
+        null,
+        [],
+        [{ roleId: 999, scopeType: 'GLOBAL', warehouseId: null }],
+        access(10),
+      ),
+    ).rejects.toMatchObject({
+      response: {
+        code: EMPLOYEE_ERROR_CODES.invalidRoleAssignments,
+      },
+    });
+  });
+
   it('requires both system-wide and warehouse permissions to delegate a mixed role', () => {
     const mixedRole = {
       name: 'warehouse manager',
@@ -375,5 +458,19 @@ describe('RoleHierarchyService', () => {
         permissions: [],
       }),
     ).toBe(true);
+    expect(
+      service.getAssignableRoleScopes(
+        superadmin,
+        {
+          name: 'superadmin',
+          position: 2_000_000_000,
+          permissions: [],
+        },
+        [12, 15],
+      ),
+    ).toEqual({
+      global: true,
+      warehouseIds: [],
+    });
   });
 });

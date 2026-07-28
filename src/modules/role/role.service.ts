@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { ROLE_ERROR_CODES } from '@meerkapp/wms-contracts';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CreateRoleDto } from './dto/create-role.dto';
@@ -38,19 +39,21 @@ export class RoleService {
   ) {}
 
   async findAll(actorId: string) {
-    const [access, roles] = await Promise.all([
+    const [access, roles, warehouseIds] = await Promise.all([
       this.hierarchy.getActorAccess(this.prisma, actorId),
       this.findAllWithClient(this.prisma),
+      this.findWarehouseIds(this.prisma),
     ]);
-    return roles.map((role) => this.serializeRole(role, access));
+    return roles.map((role) => this.serializeRole(role, access, warehouseIds));
   }
 
   async findOne(id: number, actorId: string) {
-    const [access, role] = await Promise.all([
+    const [access, role, warehouseIds] = await Promise.all([
       this.hierarchy.getActorAccess(this.prisma, actorId),
       this.findOneWithClient(this.prisma, id),
+      this.findWarehouseIds(this.prisma),
     ]);
-    return this.serializeRole(role, access);
+    return this.serializeRole(role, access, warehouseIds);
   }
 
   async create(dto: CreateRoleDto, actorId: string) {
@@ -87,7 +90,8 @@ export class RoleService {
           },
           select: ROLE_SELECT,
         });
-        return this.serializeRole(role, access);
+        const warehouseIds = await this.findWarehouseIds(tx);
+        return this.serializeRole(role, access, warehouseIds);
       });
     } catch (error) {
       this.rethrowRoleNameConflict(error, dto.name);
@@ -123,9 +127,11 @@ export class RoleService {
             where: { employeeRoleId: id, scopeType: 'WAREHOUSE' },
           });
           if (scopedAssignmentCount > 0) {
-            throw new BadRequestException(
-              'Remove warehouse role assignments before removing the last resource-scoped permission',
-            );
+            throw new BadRequestException({
+              code: ROLE_ERROR_CODES.warehouseAssignmentsRequireScopedPermission,
+              message:
+                'Remove warehouse role assignments before removing the last resource-scoped permission',
+            });
           }
         }
 
@@ -151,11 +157,12 @@ export class RoleService {
           }
         }
 
-        const [updated, updatedAccess] = await Promise.all([
+        const [updated, updatedAccess, warehouseIds] = await Promise.all([
           this.findOneWithClient(tx, id),
           this.hierarchy.getActorAccess(tx, actorId),
+          this.findWarehouseIds(tx),
         ]);
-        return this.serializeRole(updated, updatedAccess);
+        return this.serializeRole(updated, updatedAccess, warehouseIds);
       });
     } catch (error) {
       this.rethrowRoleNameConflict(error, dto.name);
@@ -194,19 +201,28 @@ export class RoleService {
         data: { position: SUPERADMIN_ROLE_POSITION },
       });
 
-      const [updatedAccess, updatedRoles] = await Promise.all([
+      const [updatedAccess, updatedRoles, warehouseIds] = await Promise.all([
         this.hierarchy.getActorAccess(tx, actorId),
         this.findAllWithClient(tx),
+        this.findWarehouseIds(tx),
       ]);
-      return updatedRoles.map((role) => this.serializeRole(role, updatedAccess));
+      return updatedRoles.map((role) => this.serializeRole(role, updatedAccess, warehouseIds));
     });
   }
 
-  async findAllPermissions() {
-    return this.prisma.employeePermission.findMany({
-      select: { id: true, name: true },
-      orderBy: { name: 'asc' },
-    });
+  async findAllPermissions(actorId: string) {
+    const [access, permissions] = await Promise.all([
+      this.hierarchy.getActorAccess(this.prisma, actorId),
+      this.prisma.employeePermission.findMany({
+        select: { id: true, name: true },
+        orderBy: { name: 'asc' },
+      }),
+    ]);
+
+    return permissions.map((permission) => ({
+      ...permission,
+      canGrant: this.hierarchy.canDelegatePermission(access, permission.name),
+    }));
   }
 
   private findAllWithClient(client: Prisma.TransactionClient | PrismaService) {
@@ -225,15 +241,25 @@ export class RoleService {
     return role;
   }
 
-  private serializeRole(role: RoleRow, access: ActorRoleAccess) {
+  private async findWarehouseIds(client: Prisma.TransactionClient | PrismaService) {
+    const warehouses = await client.warehouse.findMany({
+      select: { id: true },
+      orderBy: { id: 'asc' },
+    });
+    return warehouses.map(({ id }) => id);
+  }
+
+  private serializeRole(role: RoleRow, access: ActorRoleAccess, warehouseIds: readonly number[]) {
     const permissionNames = role.permissions.map(
       ({ employeePermission }) => employeePermission.name,
     );
+    const assignableScopes = this.hierarchy.getAssignableRoleScopes(access, role, warehouseIds);
     return {
       ...role,
       allowedScopeTypes: getAllowedScopeTypes(permissionNames),
       canManage: this.hierarchy.canManageRole(access, role),
-      canAssign: this.hierarchy.canAssignRoleInAnyScope(access, role),
+      assignableScopes,
+      canAssign: assignableScopes.global || assignableScopes.warehouseIds.length > 0,
     };
   }
 

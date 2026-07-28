@@ -4,7 +4,11 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { AccessScopeType } from '@meerkapp/wms-contracts';
+import {
+  AccessScopeCoverage,
+  AccessScopeType,
+  EMPLOYEE_ERROR_CODES,
+} from '@meerkapp/wms-contracts';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { PROTECTED_ROLE_NAME } from './role-hierarchy.constants';
@@ -182,6 +186,10 @@ export class RoleHierarchyService {
     this.assertPermissionInContext(access, permission, { warehouseId: null });
   }
 
+  canDelegatePermission(access: ActorRoleAccess, permission: string): boolean {
+    return this.hasPermissionInContext(access, permission, { warehouseId: null });
+  }
+
   assertPermissionInContext(
     access: ActorRoleAccess,
     permission: string,
@@ -229,14 +237,57 @@ export class RoleHierarchyService {
     return highestPosition !== null && role.position < highestPosition;
   }
 
-  canAssignRoleInAnyScope(access: ActorRoleAccess, role: RoleWithPermissions): boolean {
-    if (role.name === PROTECTED_ROLE_NAME) return access.isSuperadmin;
-    if (access.isSuperadmin) return true;
+  getPermissionScopeCoverage(
+    access: ActorRoleAccess,
+    permission: string,
+    warehouseIds: readonly number[],
+  ): AccessScopeCoverage {
+    return {
+      global: this.hasPermissionInContext(access, permission, { warehouseId: null }),
+      warehouseIds: [...new Set(warehouseIds)].filter((warehouseId) =>
+        this.hasPermissionInContext(access, permission, { warehouseId }),
+      ),
+    };
+  }
+
+  getAssignableRoleScopes(
+    access: ActorRoleAccess,
+    role: RoleWithPermissions,
+    warehouseIds: readonly number[],
+  ): AccessScopeCoverage {
+    if (role.name === PROTECTED_ROLE_NAME) {
+      return {
+        global: access.isSuperadmin,
+        warehouseIds: [],
+      };
+    }
 
     const permissionNames = role.permissions.map(
       ({ employeePermission }) => employeePermission.name,
     );
     const allowedScopeTypes = getAllowedScopeTypes(permissionNames);
+    const uniqueWarehouseIds = [...new Set(warehouseIds)];
+
+    if (access.isSuperadmin) {
+      return {
+        global: allowedScopeTypes.includes('GLOBAL'),
+        warehouseIds: allowedScopeTypes.includes('WAREHOUSE') ? uniqueWarehouseIds : [],
+      };
+    }
+
+    return {
+      global:
+        allowedScopeTypes.includes('GLOBAL') &&
+        this.canAssignRoleInContext(access, role, { warehouseId: null }),
+      warehouseIds: allowedScopeTypes.includes('WAREHOUSE')
+        ? uniqueWarehouseIds.filter((warehouseId) =>
+            this.canAssignRoleInContext(access, role, { warehouseId }),
+          )
+        : [],
+    };
+  }
+
+  canAssignRoleInAnyScope(access: ActorRoleAccess, role: RoleWithPermissions): boolean {
     const warehouseIds = [
       ...new Set(
         access.grants.flatMap(({ scopeType, warehouseId }) =>
@@ -244,24 +295,8 @@ export class RoleHierarchyService {
         ),
       ),
     ];
-    const contexts = [
-      ...(allowedScopeTypes.includes('GLOBAL') ? [null] : []),
-      ...(allowedScopeTypes.includes('WAREHOUSE') ? warehouseIds : []),
-    ];
-
-    return contexts.some((warehouseId) => {
-      const context = { warehouseId };
-      const position = this.getEffectiveRolePosition(access, context);
-      return (
-        this.hasPermissionInContext(access, 'employee:update:roles', context) &&
-        position !== null &&
-        role.position < position &&
-        permissionNames.every((permission) =>
-          this.hasPermissionInContext(access, permission, context),
-        ) &&
-        this.canDelegateRoleHierarchy(access, role)
-      );
-    });
+    const scopes = this.getAssignableRoleScopes(access, role, warehouseIds);
+    return scopes.global || scopes.warehouseIds.length > 0;
   }
 
   assertCanManageRole(access: ActorRoleAccess, role: HierarchicalRole): void {
@@ -289,11 +324,9 @@ export class RoleHierarchyService {
 
     const existingPermissionIdSet = new Set(existingPermissionIds);
     if (
-      !access.isSuperadmin &&
       requestedPermissions.some(
         ({ id, name }) =>
-          !existingPermissionIdSet.has(id) &&
-          !this.hasPermissionInContext(access, name, { warehouseId: null }),
+          !existingPermissionIdSet.has(id) && !this.canDelegatePermission(access, name),
       )
     ) {
       throw new ForbiddenException('Cannot delegate permissions you do not have globally');
@@ -400,7 +433,7 @@ export class RoleHierarchyService {
       },
     });
     if (roles.length !== roleIds.length) {
-      throw new BadRequestException('One or more roles do not exist');
+      throw this.invalidRoleAssignments('One or more roles do not exist');
     }
 
     await this.assertWarehousesExist(client, requestedAssignments);
@@ -412,10 +445,10 @@ export class RoleHierarchyService {
         ({ employeePermission }) => employeePermission.name,
       );
       if (!isScopeAllowedForPermissions(assignment.scopeType, permissionNames)) {
-        throw new BadRequestException(`Role ${role.id} has no resource-scoped permissions`);
+        throw this.invalidRoleAssignments(`Role ${role.id} has no resource-scoped permissions`);
       }
       if (role.name === PROTECTED_ROLE_NAME && assignment.scopeType !== 'GLOBAL') {
-        throw new BadRequestException('The protected role must be assigned globally');
+        throw this.invalidRoleAssignments('The protected role must be assigned globally');
       }
     }
 
@@ -561,14 +594,14 @@ export class RoleHierarchyService {
       where: { id: { in: warehouseIds } },
     });
     if (warehouseCount !== warehouseIds.length) {
-      throw new BadRequestException('One or more assignment warehouses do not exist');
+      throw this.invalidRoleAssignments('One or more assignment warehouses do not exist');
     }
   }
 
   private assertUniqueRoleAssignments(assignments: NormalizedRoleAssignment[]): void {
     const keys = assignments.map((assignment) => this.assignmentKey(assignment));
     if (new Set(keys).size !== keys.length) {
-      throw new BadRequestException('Role assignments must be unique');
+      throw this.invalidRoleAssignments('Role assignments must be unique');
     }
 
     const globalRoleIds = new Set(
@@ -579,10 +612,34 @@ export class RoleHierarchyService {
         ({ roleId, scopeType }) => scopeType === 'WAREHOUSE' && globalRoleIds.has(roleId),
       )
     ) {
-      throw new BadRequestException(
+      throw this.invalidRoleAssignments(
         'A global role assignment cannot be combined with warehouse assignments',
       );
     }
+  }
+
+  private canAssignRoleInContext(
+    access: ActorRoleAccess,
+    role: RoleWithPermissions,
+    context: AuthorizationContext,
+  ): boolean {
+    const position = this.getEffectiveRolePosition(access, context);
+    return (
+      this.hasPermissionInContext(access, 'employee:update:roles', context) &&
+      position !== null &&
+      role.position < position &&
+      role.permissions.every(({ employeePermission }) =>
+        this.hasPermissionInContext(access, employeePermission.name, context),
+      ) &&
+      this.canDelegateRoleHierarchy(access, role)
+    );
+  }
+
+  private invalidRoleAssignments(message: string): BadRequestException {
+    return new BadRequestException({
+      code: EMPLOYEE_ERROR_CODES.invalidRoleAssignments,
+      message,
+    });
   }
 
   private hasGlobalProtectedRole(target: EmployeeAuthorizationTarget): boolean {
