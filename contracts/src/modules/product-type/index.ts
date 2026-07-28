@@ -5,6 +5,17 @@ import { z } from 'zod';
 export const CHARACTERISTIC_KEY_REGEX = /^[a-z][a-z0-9_]*$/;
 const RESERVED_SKU_KEYS = new Set(['seq']);
 
+export const PRODUCT_TYPE_VALIDATION_CODES = {
+  duplicateCharacteristicKey: 'PRODUCT_TYPE_DUPLICATE_CHARACTERISTIC_KEY',
+  invalidCharacteristicRange: 'PRODUCT_TYPE_INVALID_CHARACTERISTIC_RANGE',
+  skuTemplateOnly: 'PRODUCT_TYPE_SKU_TEMPLATE_ONLY',
+  skuTemplateRequired: 'PRODUCT_TYPE_SKU_TEMPLATE_REQUIRED',
+  skuTokenLengthExceeded: 'PRODUCT_TYPE_SKU_TOKEN_LENGTH_EXCEEDED',
+  skuTokenCharacteristicMismatch: 'PRODUCT_TYPE_SKU_TOKEN_CHARACTERISTIC_MISMATCH',
+  skuOptionValueInvalid: 'PRODUCT_TYPE_SKU_OPTION_VALUE_INVALID',
+  skuMinimumLengthExceeded: 'PRODUCT_TYPE_SKU_MINIMUM_LENGTH_EXCEEDED',
+} as const;
+
 const CharacteristicKeySchema = z
   .string()
   .min(1)
@@ -78,6 +89,9 @@ export const CharacteristicsSchemeSchema = z
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           message: `Duplicate characteristic key: ${characteristic.key}`,
+          params: {
+            validationCode: PRODUCT_TYPE_VALIDATION_CODES.duplicateCharacteristicKey,
+          },
           path: [index, 'key'],
         });
       }
@@ -92,6 +106,9 @@ export const CharacteristicsSchemeSchema = z
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           message: 'Characteristic minimum cannot exceed maximum',
+          params: {
+            validationCode: PRODUCT_TYPE_VALIDATION_CODES.invalidCharacteristicRange,
+          },
           path: [index, 'validation', 'max'],
         });
       }
@@ -140,6 +157,9 @@ export const ProductTypeConfigurationSchema = ProductTypeFieldsSchema.superRefin
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: 'skuTemplate is only allowed for TEMPLATE sku mode',
+        params: {
+          validationCode: PRODUCT_TYPE_VALIDATION_CODES.skuTemplateOnly,
+        },
         path: ['skuTemplate'],
       });
     }
@@ -150,6 +170,9 @@ export const ProductTypeConfigurationSchema = ProductTypeFieldsSchema.superRefin
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'skuTemplate is required for TEMPLATE sku mode',
+      params: {
+        validationCode: PRODUCT_TYPE_VALIDATION_CODES.skuTemplateRequired,
+      },
       path: ['skuTemplate'],
     });
     return;
@@ -170,6 +193,9 @@ export const ProductTypeConfigurationSchema = ProductTypeFieldsSchema.superRefin
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: `SKU token length cannot exceed ${SKU_TOKEN_MAX_LENGTH}`,
+        params: {
+          validationCode: PRODUCT_TYPE_VALIDATION_CODES.skuTokenLengthExceeded,
+        },
         path: ['skuTemplate'],
       });
     }
@@ -187,6 +213,9 @@ export const ProductTypeConfigurationSchema = ProductTypeFieldsSchema.superRefin
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: `SKU token ${key} must reference a required number, select or toggle characteristic`,
+        params: {
+          validationCode: PRODUCT_TYPE_VALIDATION_CODES.skuTokenCharacteristicMismatch,
+        },
         path: ['skuTemplate'],
       });
       continue;
@@ -199,6 +228,9 @@ export const ProductTypeConfigurationSchema = ProductTypeFieldsSchema.superRefin
             code: z.ZodIssueCode.custom,
             message:
               'An option used in a SKU template must contain only letters, numbers, dots, dashes and underscores',
+            params: {
+              validationCode: PRODUCT_TYPE_VALIDATION_CODES.skuOptionValueInvalid,
+            },
             path: ['characteristicsScheme', entry.index, 'options', optionIndex, 'value'],
           });
         }
@@ -210,6 +242,9 @@ export const ProductTypeConfigurationSchema = ProductTypeFieldsSchema.superRefin
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: `SKU template cannot produce a value within ${SKU_MAX_LENGTH} characters`,
+      params: {
+        validationCode: PRODUCT_TYPE_VALIDATION_CODES.skuMinimumLengthExceeded,
+      },
       path: ['skuTemplate'],
     });
   }
