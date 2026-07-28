@@ -1,4 +1,7 @@
-import { ProductTypeConfigurationSchema } from '@meerkapp/wms-contracts';
+import {
+  PRODUCT_TYPE_VALIDATION_CODES,
+  ProductTypeConfigurationSchema,
+} from '@meerkapp/wms-contracts';
 import {
   normalizeManualSku,
   ProductSkuError,
@@ -123,6 +126,29 @@ describe('product SKU', () => {
         characteristicsScheme: scheme,
       }).success,
     ).toBe(false);
+  });
+
+  it('exposes stable validation codes for localized clients', () => {
+    const result = ProductTypeConfigurationSchema.safeParse({
+      name: 'Shoes',
+      skuMode: 'TEMPLATE',
+      skuTemplate: '{unknown}-{seq:19}',
+      characteristicsScheme: scheme,
+    });
+
+    expect(result.success).toBe(false);
+    if (result.success) return;
+
+    const validationCodes = result.error.issues.flatMap((issue) => {
+      const validationCode = issue.code === 'custom' ? issue.params?.validationCode : undefined;
+      return typeof validationCode === 'string' ? [validationCode] : [];
+    });
+    expect(validationCodes).toEqual(
+      expect.arrayContaining([
+        PRODUCT_TYPE_VALIDATION_CODES.skuTokenCharacteristicMismatch,
+        PRODUCT_TYPE_VALIDATION_CODES.skuTokenLengthExceeded,
+      ]),
+    );
   });
 
   it('only restricts select values when the characteristic is part of the SKU', () => {
